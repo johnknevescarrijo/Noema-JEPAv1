@@ -116,58 +116,81 @@ $$\text{Parameter Efficiency} = \frac{14,998,464}{15,000,000} = 99.99\% \quad (\
 ### 1. Object-Centric Slot Attention (AMP-Stabilized)
 Given patch token representations $X \in \mathbb{R}^{N \times D}$ and learnable Gaussian slot initializations $S \in \mathbb{R}^{K \times D}$, slots iteratively compete for spatial evidence over $T_{\text{iter}} = 3$ iterations:
 
-$$Q = W_q (\text{LN}(S)), \quad K = W_k (\text{LN}(X)), \quad V = W_v (\text{LN}(X))$$
+$$
+Q = W_q\big(\operatorname{LN}(S)\big), \quad K = W_k\big(\operatorname{LN}(X)\big), \quad V = W_v\big(\operatorname{LN}(X)\big)
+$$
 
-$$A_{k, n} = \text{Softmax}_{k} \left( \frac{Q_k K_n^T}{\sqrt{D}} \right) \quad \text{where } \hat{A}_{k, n} = \frac{A_{k, n} + \epsilon}{\sum_{m=1}^{N} (A_{k, m} + \epsilon)}$$
+$$
+A_{k, n} = \operatorname{Softmax}_{k} \left( \frac{Q_k K_n^{\top}}{\sqrt{D}} \right), \quad \hat{A}_{k, n} = \frac{A_{k, n} + \epsilon}{\sum_{m=1}^{N} (A_{k, m} + \epsilon)}
+$$
 
-$$U_k = \sum_{n=1}^{N} \hat{A}_{k, n} V_n \in \mathbb{R}^{D}$$
-
-$$S_k \leftarrow \text{GRU}(U_k, S_k) + \text{MLP}(\text{LN}(S_k))$$
+$$
+U_k = \sum_{n=1}^{N} \hat{A}_{k, n} V_n, \quad S_k \leftarrow \operatorname{GRU}(U_k, S_k) + \operatorname{MLP}\big(\operatorname{LN}(S_k)\big)
+$$
 
 > [!IMPORTANT]
-> The attention score computation $\frac{Q K^T}{\sqrt{D}}$ and softmax normalization are explicitly cast to **`torch.float32`**, preventing underflow and NaN anomalies when running under mixed-precision (`torch.amp.autocast('cuda', dtype=torch.float16)`).
+> The attention score computation $\frac{Q K^{\top}}{\sqrt{D}}$ and softmax normalization are explicitly cast to **`torch.float32`**, preventing underflow and NaN anomalies when running under mixed-precision (`torch.amp.autocast('cuda', dtype=torch.float16)`).
 
 ---
 
 ### 2. Zero-Initialized Residual FiLM (`ZeroInitResidualFiLM`)
 To condition relational physical transitions on the high-level semantic vector $c_{\text{scene}}$ without destabilizing cold-start training:
 
-$$\tilde{h}_i = \text{LayerNorm}(h_i)$$
+$$
+\tilde{h}_i = \operatorname{LN}(h_i), \quad [\gamma, \beta] = W_{\text{proj}}\, c_{\text{scene}}, \quad \alpha_{\text{eff}} = \alpha \cdot \mu_{\text{wd}}
+$$
 
-$$[\gamma, \beta] = W_{\text{proj}} c_{\text{scene}}$$
+$$
+\operatorname{FiLM}(h_i, c_{\text{scene}}) = \big( 1 + \alpha_{\text{eff}} \cdot \tanh(\gamma) \big) \odot \tilde{h}_i + \alpha_{\text{eff}} \cdot \beta
+$$
 
-$$\alpha_{\text{eff}} = \alpha \cdot \mu_{\text{watchdog}}$$
-
-$$\text{FiLM}(h_i, c_{\text{scene}}) = \left( 1 + \alpha_{\text{eff}} \cdot \tanh(\gamma) \right) \odot \tilde{h}_i + \alpha_{\text{eff}} \cdot \beta$$
-
-- **Gating Parameter $\alpha$:** Initialized near zero ($\alpha_0 = 0.05$). At $t=0$, $\text{FiLM}(h, c) \approx \text{LN}(h)$, preserving pure unconditioned physical dynamics.
-- **Dynamic Watchdog Scale $\mu \in [0.05, 1.0]$:** Dynamically damped if the model exhibits FiLM overshadowing.
+- **Gating Parameter ($\alpha$):** Initialized near zero ($\alpha_0 = 0.05$). At $t=0$, $\operatorname{FiLM}(h, c) \approx \operatorname{LN}(h)$, preserving pure unconditioned physical dynamics.
+- **Dynamic Watchdog Scale ($\mu_{\text{wd}} \in [0.05, 1.0]$):** Dynamically damped if the model exhibits FiLM overshadowing.
 - **Conditional Dropout ($p = 0.15$):** Randomly drops $c_{\text{scene}}$ during training, enforcing robust predictive capability even under zero semantic guidance.
 
 ---
 
 ### 3. Multi-Component Loss Function (`NoemaWorldModelLoss`)
 
-$$\mathcal{L}_{\text{total}} = \lambda_{\text{pred}} \mathcal{L}_{\text{pred}} + \mathcal{L}_{\text{vicreg}} + \lambda_{\text{intra}} \mathcal{L}_{\text{intra}} + \lambda_{\text{think}} \mathcal{L}_{\text{think}}$$
+$$
+\mathcal{L}_{\text{total}} = \lambda_{\text{pred}}\,\mathcal{L}_{\text{pred}} + \mathcal{L}_{\text{vicreg}} + \lambda_{\text{intra}}\,\mathcal{L}_{\text{intra}} + \lambda_{\text{think}}\,\mathcal{L}_{\text{think}}
+$$
 
 #### A. Masked Slot Latent Prediction ($\mathcal{L}_{\text{pred}}$)
-$$\mathcal{L}_{\text{pred}} = \frac{1}{|\mathcal{M}|} \sum_{k \in \mathcal{M}} \text{SmoothL1}\left( \hat{S}_k, \text{stop\_gradient}(S_k) \right)$$
+Over the set of masked object slot indices $\mathcal{M}$, where $\operatorname{sg}(\cdot)$ denotes the stop-gradient operator:
+
+$$
+\mathcal{L}_{\text{pred}} = \frac{1}{|\mathcal{M}|} \sum_{k \in \mathcal{M}} \operatorname{SmoothL1}\!\left( \hat{S}_k,\, \operatorname{sg}(S_k) \right)
+$$
 
 #### B. Numerically Stable VICReg in Latent Space ($\mathcal{L}_{\text{vicreg}}$)
-Projected representations $\hat{Z} = g(\hat{S})$ and $Z = g(S)$ are mapped through an fp32 projector:
-- **Invariance Criterion:** $\mathcal{L}_{\text{sim}} = \frac{1}{B} \sum_{b=1}^B \|\hat{z}_b - z_b\|_2^2$
+Projected representations $\hat{Z} = g(\hat{S})$ and $Z = g(S)$ are mapped through an `fp32` expander head:
+
+- **Invariance Criterion:**
+  $$
+  \mathcal{L}_{\text{sim}} = \frac{1}{B} \sum_{b=1}^{B} \left\| \hat{z}_b - z_b \right\|_2^2
+  $$
 - **Variance Hinge Criterion ($\gamma = 1.0$):**
-  $$\mathcal{L}_{\text{var}} = \frac{1}{2 D'} \sum_{j=1}^{D'} \left[ \max(0, \gamma - \sigma_j(\hat{Z})) + \max(0, \gamma - \sigma_j(Z)) \right]$$
+  $$
+  \mathcal{L}_{\text{var}} = \frac{1}{2 D'} \sum_{j=1}^{D'} \Big[ \max\!\big(0,\, \gamma - \sigma_j(\hat{Z})\big) + \max\!\big(0,\, \gamma - \sigma_j(Z)\big) \Big]
+  $$
 - **Covariance Decorrelation:**
-  $$\mathcal{L}_{\text{cov}} = \frac{1}{D'} \sum_{i \neq j} \left( [C(\hat{Z})]_{i,j}^2 + [C(Z)]_{i,j}^2 \right)$$
+  $$
+  \mathcal{L}_{\text{cov}} = \frac{1}{D'} \sum_{i \neq j} \left( [C(\hat{Z})]_{i,j}^2 + [C(Z)]_{i,j}^2 \right)
+  $$
 
 #### C. Intra-Scene Variance Regularization ($\mathcal{L}_{\text{intra}}$)
-When conditioned on a global scene vector $c_{\text{scene}}$, relational networks risk flattening all $K$ slot vectors into the same identical vector. We enforce intra-scene diversity:
+When conditioned on a global scene vector $c_{\text{scene}}$, relational networks risk flattening all $K$ object slots within a scene into an identical point. We enforce intra-scene slot diversity:
 
-$$\sigma_{\text{intra}} = \frac{1}{B} \sum_{b=1}^B \left( \frac{1}{K} \sum_{k=1}^K \|\hat{S}_{b,k} - \bar{S}_b\|_2 \right), \quad \mathcal{L}_{\text{intra}} = \max\left(0, \tau_{\text{intra}} - \sigma_{\text{intra}}\right)$$
+$$
+\sigma_{\text{intra}} = \frac{1}{B} \sum_{b=1}^{B} \left( \frac{1}{K} \sum_{k=1}^{K} \left\| \hat{S}_{b,k} - \bar{S}_b \right\|_2 \right), \quad \mathcal{L}_{\text{intra}} = \max\!\left(0,\, \tau_{\text{intra}} - \sigma_{\text{intra}}\right)
+$$
 
 #### D. ThinkJEPA Semantic Alignment ($\mathcal{L}_{\text{think}}$)
-$$\mathcal{L}_{\text{think}} = 1 - \frac{1}{B} \sum_{b=1}^B \frac{\phi(\bar{S}_b) \cdot c_{\text{scene}, b}}{\|\phi(\bar{S}_b)\|_2 \|c_{\text{scene}, b}\|_2}$$
+
+$$
+\mathcal{L}_{\text{think}} = 1 - \frac{1}{B} \sum_{b=1}^{B} \frac{\phi(\bar{S}_b) \cdot c_{\text{scene}, b}}{\left\|\phi(\bar{S}_b)\right\|_2 \, \left\|c_{\text{scene}, b}\right\|_2}
+$$
 
 ---
 
