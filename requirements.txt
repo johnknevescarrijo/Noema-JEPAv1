@@ -1,0 +1,13 @@
+# Core Dependencies for Noema-JEPA v1
+torch>=2.0.0
+torchvision>=0.15.0
+einops>=0.7.0
+safetensors>=0.4.0
+tqdm>=4.65.0
+numpy>=1.22.0
+
+# Optional ThinkJEPA Branch Dependencies (Google Colab / GPU Server)
+# Uncomment or install via: pip install noema-jepa[vllm]
+# vllm>=0.4.0
+# transformers>=4.40.0
+# accelerate>=0.28.0

@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "noema-jepa"
+version = "0.1.0"
+description = "Noema-JEPA: 15M Parameter World Model with Contextual Slot JEPA and ThinkJEPA vLLM Bridge"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Noema Research Team"}
+]
+keywords = ["jepa", "world-model", "vllm", "vicreg", "slot-attention", "colab", "deep-learning"]
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "einops>=0.7.0",
+    "safetensors>=0.4.0",
+    "tqdm>=4.65.0",
+    "numpy>=1.22.0",
+]
+
+[project.optional-dependencies]
+vllm = [
+    "vllm>=0.4.0",
+    "transformers>=4.40.0",
+    "accelerate>=0.28.0",
+]
+colab = [
+    "matplotlib>=3.7.0",
+    "jupyterlab>=4.0.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "black>=23.7.0",
+    "flake8>=6.1.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["noema_jepa*"]
