@@ -1,28 +1,9 @@
 <div align="center">
 
-<!-- ========================================== -->
-<!--       HERMES // NOUS GIRL ASCII ART        -->
-<!-- ========================================== -->
-```text
-                         .----------------.
-                        /   \          /   \
-                       /     \        /     \
-                      /       \  /\  /       \
-                     /         \/  \/         \
-             .---.  |     _              _     |  .---.
-            | [=] | |    / \            / \    | | [=] |      __  __ ___ ___ __  __ ___ ___ 
-            | [=] | |   | (o)          (o) |   | | [=] |     |  \/  | __| _ \  \/  | __/ __|
-            | [=] | |    \_/     /\     \_/    | | [=] |     | |\/| | _||   / |\/| | _|\__ \
-             "---"   \          /  \          /   "---"      |_|  |_|___|_|_\_|  |_|___|___/
-                      \         \__/         /               < NOUS COGNITIVE AGENT >
-                       \                    /
-                        \     .------.     /
-                         \   (  ====  )   /
-                          `---\______/---`
-                               /    \
-                              /  /\  \
-                             /  /  \  \
-```
+  <!-- Iconic Manga Character Hero Avatar (Clean, High-Res, Dark Neon Glow) -->
+  <a href="https://github.com/johnknevescarrijo">
+    <img src="https://raw.githubusercontent.com/NousResearch/hermes-agent/main/assets/icon-master-dark.svg" width="160" height="160" alt="Cognitive Autonomous Agents" style="border-radius: 28px; box-shadow: 0 10px 30px rgba(56, 189, 248, 0.35); transition: transform 0.3s ease;" />
+  </a>
 
   <!-- Typing SVG Dynamic Header -->
   <a href="https://git.io/typing-svg">
@@ -30,7 +11,7 @@
   </a>
 
   <p align="center">
-    <strong>Robotics Engineer & AI Researcher</strong> passionate about bridging perception, world models, and physical agency.
+    <strong>Robotics Engineer & AI Researcher</strong> focused on perception, predictive world representations, and physical agency.
   </p>
 
   <!-- Connect & Social Badges -->
@@ -38,7 +19,7 @@
     <a href="https://www.linkedin.com/in/john-kennedy-neves-carrijo-7997a0308/"><img src="https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn" /></a>
     <a href="mailto:johncarrijo2255@gmail.com"><img src="https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white" alt="Email" /></a>
     <a href="https://github.com/johnknevescarrijo"><img src="https://img.shields.io/badge/GitHub-johnknevescarrijo-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub" /></a>
-    <a href="https://hermes-agent.nousresearch.com"><img src="https://img.shields.io/badge/Hermes_Agent-NousResearch-9333EA?style=for-the-badge&logo=openai&logoColor=white" alt="Hermes Agent" /></a>
+    <a href="https://github.com/johnknevescarrijo/Noema-JEPAv1"><img src="https://img.shields.io/badge/World_Model-Noema--JEPA_v1-38BDF8?style=for-the-badge&logo=pytorch&logoColor=white" alt="Noema-JEPA v1" /></a>
   </p>
 
 </div>
@@ -47,7 +28,7 @@
 
 ### 🧠 About Me & Research Mission
 
-I am an AI researcher & robotics developer dedicated to building **embodied intelligent systems** that can perceive, predict, and physically interact with the real world. Inspired by autonomous reasoning agents (like **Hermes Agent**) and predictive cognitive architectures, my work centers on:
+I am an AI researcher & robotics developer dedicated to building **embodied intelligent systems** that can perceive, predict, and physically interact with the real world. My work investigates predictive cognitive architectures, object-centric causal dynamics, and autonomous reasoning agents:
 
 - 🌐 **World Models & Self-Supervised Learning:** Designing object-centric predictive latent representations (JEPAs, Slot Attention, C-JEPA, VICReg) to forecast physical causality without pixel hallucinations.
 - 🦾 **Robotic Learning & Manipulation:** Training reactive and long-horizon policies via Imitation Learning, Diffusion Policies, Reinforcement Learning, and Vision-Language-Action (VLA) foundations.
@@ -82,7 +63,7 @@ I am an AI researcher & robotics developer dedicated to building **embodied inte
       <h4>🤖 Autonomous Cognitive Agents</h4>
       <ul>
         <li><strong>Closed-Loop Agency:</strong> Perception ➔ Latent World Model ➔ Hierarchical Planning ➔ Motor Control.</li>
-        <li><strong>Hermes Agent & Tooling:</strong> Self-improving skill acquisition, recursive reasoning & persistent memory loops.</li>
+        <li><strong>Agentic Reasoning & Tooling:</strong> Self-improving skill acquisition, recursive reasoning & persistent memory loops.</li>
         <li><strong>Spatial & Episodic Memory:</strong> 3D Scene Graphs, topological maps & semantic vector retrieval.</li>
       </ul>
     </td>
