@@ -1,24 +1,35 @@
 <div align="center">
 
-  <!-- Iconic Manga Character Hero Avatar (Clean, High-Res, Dark Neon Glow) -->
-  <a href="https://github.com/johnknevescarrijo">
-    <img src="https://raw.githubusercontent.com/NousResearch/hermes-agent/main/assets/icon-master-dark.svg" width="160" height="160" alt="Cognitive Autonomous Agents" style="border-radius: 28px; box-shadow: 0 10px 30px rgba(56, 189, 248, 0.35); transition: transform 0.3s ease;" />
-  </a>
+  <!-- Iconic Manga Character Hero Avatar (Larger & Well-Spaced) -->
+  <p align="center" style="margin-top: 10px; margin-bottom: 25px;">
+    <a href="https://github.com/johnknevescarrijo">
+      <img src="https://raw.githubusercontent.com/NousResearch/hermes-agent/main/assets/icon-master-dark.svg" width="260" height="260" alt="Cognitive Autonomous Agents" style="border-radius: 36px; box-shadow: 0 12px 35px rgba(56, 189, 248, 0.45); display: inline-block;" />
+    </a>
+  </p>
+
+  <br />
 
   <!-- Typing SVG Dynamic Header -->
-  <a href="https://git.io/typing-svg">
-    <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=26&duration=3000&pause=1000&color=38BDF8&center=true&vCenter=true&multiline=true&width=750&height=100&lines=Hi%2C+I'm+John+Kennedy+%F0%9F%91%8B;Building+World+Models+%26+Robotic+Learning+Systems;Researching+Embodied+AI%2C+Autonomous+Agents+%26+JEPA" alt="Typing SVG" />
-  </a>
+  <p align="center" style="margin-bottom: 15px;">
+    <a href="https://git.io/typing-svg">
+      <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=26&duration=3000&pause=1000&color=38BDF8&center=true&vCenter=true&multiline=true&width=750&height=100&lines=Hi%2C+I'm+John+Kennedy+%F0%9F%91%8B;Building+World+Models+%26+Robotic+Learning+Systems;Researching+Embodied+AI%2C+Autonomous+Agents+%26+JEPA" alt="Typing SVG" />
+    </a>
+  </p>
 
-  <p align="center">
+  <p align="center" style="font-size: 16px; margin-bottom: 20px;">
     <strong>Robotics Engineer & AI Researcher</strong> focused on perception, predictive world representations, and physical agency.
   </p>
 
+  <br />
+
   <!-- Connect & Social Badges -->
-  <p align="center">
+  <p align="center" style="margin-bottom: 20px;">
     <a href="https://www.linkedin.com/in/john-kennedy-neves-carrijo-7997a0308/"><img src="https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn" /></a>
+    &nbsp;
     <a href="mailto:johncarrijo2255@gmail.com"><img src="https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white" alt="Email" /></a>
+    &nbsp;
     <a href="https://github.com/johnknevescarrijo"><img src="https://img.shields.io/badge/GitHub-johnknevescarrijo-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub" /></a>
+    &nbsp;
     <a href="https://github.com/johnknevescarrijo/Noema-JEPAv1"><img src="https://img.shields.io/badge/World_Model-Noema--JEPA_v1-38BDF8?style=for-the-badge&logo=pytorch&logoColor=white" alt="Noema-JEPA v1" /></a>
   </p>
 
