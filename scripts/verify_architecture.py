@@ -11,6 +11,7 @@ Validates:
 
 import sys
 import os
+import math
 from pathlib import Path
 import torch
 
@@ -82,25 +83,59 @@ def test_forward_passes(model: NoemaJEPA, config: NoemaConfig):
     assert not torch.isnan(pred_slots).any(), "NaN found in predicted slots!"
     print(">>> Static Image Forward Pass: PASSED")
 
-    # 2. Test Short Video Forward Pass
-    print("\n[*] Running Video Forward Pass: [B=2, T=3, C=3, H=128, W=128]...")
-    video = torch.randn(2, 3, C, H, W)
-    video_outputs = model(video, modulation_scale=0.8)
-    assert video_outputs["pred_masked_slots"].shape == (2, config.num_masked_slots, config.embed_dim)
-    print(">>> Video Clip Forward Pass: PASSED\n")
+    # 2. Test Video Forward Pass with 2D and 3D think embeddings
+    print("\n[*] Running Video Forward Pass with 2D Think Emb: [B=2, T=4, C=3, H=128, W=128]...")
+    video = torch.randn(2, 4, C, H, W)
+    think_2d = torch.randn(2, vlm_dim)
+    video_outputs_2d = model(video, think_embeddings=think_2d, modulation_scale=0.8)
+    assert video_outputs_2d["pred_masked_slots"].shape == (2, config.num_masked_slots, config.embed_dim)
+    assert video_outputs_2d["c_scene"].shape == (2, config.embed_dim)
+    print("    - Predicted slots with 2D think_emb: PASSED")
 
-    return outputs
+    print("[*] Running Video Forward Pass with 3D Think Emb: [B=2, T=4, C=3, H=128, W=128] & think [B=2, T=4, D]...")
+    think_3d = torch.randn(2, 4, vlm_dim)
+    video_outputs_3d = model(video, think_embeddings=think_3d, modulation_scale=0.8)
+    assert video_outputs_3d["pred_masked_slots"].shape == (2, config.num_masked_slots, config.embed_dim)
+    assert video_outputs_3d["c_scene"].shape == (2, config.embed_dim)
+    print("    - Temporal mean-pooling of 3D think_emb: PASSED")
+
+    # Test arbitrary long clip length (T=12 > max_frames) to verify temporal interpolation
+    print("[*] Running Extended Video Clip (T=12 frames > 8) to verify temporal interpolation...")
+    long_video = torch.randn(2, 12, C, H, W)
+    long_outputs = model(long_video, modulation_scale=1.0)
+    assert long_outputs["pred_masked_slots"].shape == (2, config.num_masked_slots, config.embed_dim)
+    print(">>> Video Clip Forward Passes (2D/3D Think & Interpolation): PASSED\n")
+
+    return outputs, video_outputs_2d
 
 
-def test_loss_computation(model: NoemaJEPA, config: NoemaConfig, outputs: dict):
+def test_loss_computation(model: NoemaJEPA, config: NoemaConfig, outputs: dict, video_outputs: dict):
     print("=" * 70)
-    print("STEP 3: Validating Multi-Component Loss (VICReg fp32 + C-JEPA + Intra-Scene)")
+    print("STEP 3: Validating Multi-Component Loss & compute_loss Interface")
     print("=" * 70)
+
+    from noema_jepa.losses.vicreg import compute_loss
 
     loss_fn = NoemaWorldModelLoss(config)
+
+    # 1. Test loss_fn(outputs)
     total_loss, metrics = loss_fn(outputs)
 
-    print(f"[*] Loss Breakdown:")
+    # 2. Test model.compute_loss(outputs)
+    model_loss, model_metrics = model.compute_loss(outputs, loss_fn=loss_fn)
+    assert torch.isclose(total_loss, model_loss)
+
+    # 3. Test standalone compute_loss(outputs)
+    func_loss, _ = compute_loss(outputs, config=config, loss_fn=loss_fn)
+    assert torch.isclose(total_loss, func_loss)
+
+    # 4. Test 5D Video Loss Computation
+    vid_loss, vid_metrics = model.compute_loss(video_outputs, loss_fn=loss_fn)
+    assert not torch.isnan(vid_loss), "5D Video Loss is NaN!"
+    assert vid_loss > 0.0, "5D Video Loss must be positive"
+    print(f"[*] 5D Video Multi-Component Loss: {vid_loss.item():.6f}")
+
+    print(f"[*] Static Image Loss Breakdown:")
     for k, v in metrics.items():
         print(f"    - {k:<26}: {v:.6f}")
 
@@ -117,7 +152,7 @@ def test_loss_computation(model: NoemaJEPA, config: NoemaConfig, outputs: dict):
     assert model.predictor.pred_head[0].weight.grad is not None, "Predictor gradient is None!"
     assert model.think_bridge.projector[0].weight.grad is not None, "Think Bridge gradient is None!"
 
-    print(">>> Multi-Component Loss & Backward Pass: PASSED [Gradients Valid]\n")
+    print(">>> Multi-Component Loss, compute_loss APIs & Backward Pass: PASSED [Gradients Valid]\n")
     return loss_fn
 
 
@@ -220,9 +255,11 @@ def test_traditional_datasets():
 
         benchmarks = [
             ("CLEVR / Slot Attention", "clevr", 1),
+            ("CLEVRER / Collision Physics Video", "clevrer", 4),
+            ("Kubric MOVi / Rigid Dynamics Video", "kubric", 4),
+            ("CLEVRER + Kubric / Combined 5D", "clevrer_kubric", 4),
             ("SSv2 / Temporal Physics", "ssv2", 3),
             ("MS-COCO / Real Multi-Object", "coco", 1),
-            ("Kubric MOVi / Dynamic Collisions", "kubric", 2),
             ("Synthetic Toy / Procedural", "synthetic", 1),
         ]
 
@@ -239,13 +276,54 @@ def test_traditional_datasets():
             images = batch["images"]
             think_embs = batch.get("think_embeddings")
             emb_str = f"cached {tuple(think_embs.shape)}" if think_embs is not None else "None (unconditioned)"
-            print(f"[*] {desc:34s} -> Batch Images: {tuple(images.shape)}, Think: {emb_str}")
+            print(f"[*] {desc:36s} -> Batch Images: {tuple(images.shape)}, Think: {emb_str}")
             if frames > 1:
                 assert images.ndim == 5, f"Expected 5D tensor [B, T, C, H, W], got shape {images.shape}"
+                assert images.shape[1] == frames, f"Expected {frames} frames, got {images.shape[1]}"
             else:
                 assert images.ndim == 4, f"Expected 4D tensor [B, C, H, W], got shape {images.shape}"
 
-    print(">>> Traditional Datasets & DataLoaders: PASSED\n")
+    print(">>> Traditional Datasets & 5D Video DataLoaders: PASSED\n")
+
+
+def test_colab_trainer_video_training(model: NoemaJEPA, config: NoemaConfig):
+    print("=" * 70)
+    print("STEP 7: Validating ColabTrainer 5D Video Execution (CLEVRER + Kubric)")
+    print("=" * 70)
+
+    from noema_jepa.train.colab_trainer import ColabTrainer
+    from noema_jepa.data.datasets import build_noema_dataloader
+
+    # Fast 5D video dataloader
+    video_loader = build_noema_dataloader(
+        dataset_name="clevrer_kubric",
+        batch_size=2,
+        num_frames=4,
+        num_workers=0,
+        max_samples=4,
+        drop_last=True,
+    )
+
+    trainer = ColabTrainer(model=model, config=config)
+
+    # 1. Single train_step test
+    batch = next(iter(video_loader))
+    loss_val, metrics, report = trainer.train_step(batch)
+
+    print(f"[*] Single 5D Video Step Completed:")
+    print(f"    - Step Loss:     {loss_val:.4f}")
+    print(f"    - Watchdog:      {report.status} | FiLM Scale: {report.current_modulation_scale:.2f}")
+    print(f"    - Intra-std:     {metrics.get('metric_intra_scene_std', 0.0):.4f}")
+    assert loss_val > 0.0 and not math.isnan(loss_val)
+
+    # 2. Train epoch test
+    epoch_stats = trainer.train_epoch(video_loader, epoch=1)
+    print(f"[*] Full 5D Video Epoch Completed:")
+    print(f"    - Avg Loss:      {epoch_stats['avg_loss']:.4f}")
+    print(f"    - Throughput:    {epoch_stats['throughput_samples_per_sec']:.1f} clips/s")
+    print(f"    - Warnings:      {epoch_stats['watchdog_warnings']}")
+
+    print(">>> ColabTrainer 5D Video Training: PASSED\n")
 
 
 def main():
@@ -253,18 +331,21 @@ def main():
     print("   NOEMA-JEPA v1 (~15M Parameters) ARCHITECTURE VERIFICATION   ")
     print("#" * 70)
 
+    import math
     model, config = test_parameter_budget()
-    outputs = test_forward_passes(model, config)
-    loss_fn = test_loss_computation(model, config, outputs)
+    outputs, video_outputs = test_forward_passes(model, config)
+    loss_fn = test_loss_computation(model, config, outputs, video_outputs)
     test_variance_watchdog_collapse_intervention(config)
     test_think_cache()
     test_traditional_datasets()
+    test_colab_trainer_video_training(model, config)
 
     print("=" * 70)
-    print("ALL TESTS PASSED SUCCESSFULLY! ARCHITECTURE IS 100% READY.")
+    print("ALL TESTS PASSED SUCCESSFULLY! ARCHITECTURE IS 100% READY FOR A100.")
     print("=" * 70 + "\n")
 
 
 if __name__ == "__main__":
     main()
+
 

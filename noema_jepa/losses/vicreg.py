@@ -68,8 +68,9 @@ class VICRegLoss(nn.Module):
         N, D = z_pred_f32.shape
 
         # Batch variance (hinge loss: force std >= gamma)
-        std_pred = torch.sqrt(z_pred_f32.var(dim=0) + self.eps)
-        std_target = torch.sqrt(z_target_f32.var(dim=0) + self.eps)
+        # unbiased=False prevents NaN and degrees of freedom warnings when N=1
+        std_pred = torch.sqrt(z_pred_f32.var(dim=0, unbiased=False) + self.eps)
+        std_target = torch.sqrt(z_target_f32.var(dim=0, unbiased=False) + self.eps)
 
         var_loss = (
             torch.mean(F.relu(self.gamma - std_pred))
@@ -164,7 +165,8 @@ class NoemaWorldModelLoss(nn.Module):
         # Computed in fp32
         slots_f32 = all_pred_slots.float()  # [B, S, D]
         # Variance across slots dimension for each sample in batch: [B, D]
-        intra_var = slots_f32.var(dim=1) + 1e-4
+        # unbiased=False prevents NaN if num_slots is 1
+        intra_var = slots_f32.var(dim=1, unbiased=False) + 1e-4
         intra_std = torch.sqrt(intra_var).mean(dim=-1)  # [B]
         mean_intra_std = intra_std.mean()
         intra_scene_loss = torch.mean(F.relu(self.min_intra_std - intra_std))
@@ -184,13 +186,38 @@ class NoemaWorldModelLoss(nn.Module):
 
         metrics = {
             "loss_total": total_loss.item(),
+            "loss": total_loss.item(),
             "loss_pred": pred_loss.item(),
+            "pred_loss": pred_loss.item(),
             "loss_vicreg": vicreg_total.item(),
+            "vicreg_loss": vicreg_total.item(),
             "loss_intra_scene": intra_scene_loss.item(),
             "loss_think_aux": think_aux_loss.item(),
             "metric_intra_scene_std": mean_intra_std.item(),
+            "intra_std": mean_intra_std.item(),
             "active_think_loss_weight": self.think_loss_weight,
             **vicreg_metrics,
         }
 
         return total_loss, metrics
+
+    def compute_loss(self, outputs: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, Dict[str, float]]:
+        """Alias for forward pass to satisfy explicit compute_loss calls."""
+        return self.forward(outputs)
+
+
+def compute_loss(
+    outputs: Dict[str, torch.Tensor],
+    config: Optional[NoemaConfig] = None,
+    loss_fn: Optional[NoemaWorldModelLoss] = None,
+) -> Tuple[torch.Tensor, Dict[str, float]]:
+    """
+    Standalone functional interface for computing Noema-JEPA world model loss.
+    Compatible with both 4D [B, C, H, W] images and 5D [B, T, C, H, W] video clips.
+    """
+    if loss_fn is None:
+        cfg = config or NoemaConfig()
+        device = outputs["pred_masked_slots"].device
+        loss_fn = NoemaWorldModelLoss(cfg).to(device)
+    return loss_fn(outputs)
+

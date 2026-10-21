@@ -12,14 +12,20 @@ from noema_jepa.losses.vicreg import VICRegLoss, NoemaWorldModelLoss
 from noema_jepa.monitoring.variance_watchdog import VarianceWatchdog, WatchdogReport
 from noema_jepa.think_branch.vllm_extractor import VLLMThinkExtractor, DiskEmbeddingCache
 from noema_jepa.train.colab_trainer import ColabTrainer
+from noema_jepa.losses.vicreg import VICRegLoss, NoemaWorldModelLoss, compute_loss
 from noema_jepa.data.datasets import (
     BaseNoemaDataset,
     CLEVRDataset,
+    CLEVRERDataset,
     SomethingSomethingV2Dataset,
     MultiObjectScenesDataset,
     KubricMOViDataset,
     ClassicVisionDataset,
     SyntheticToyDataset,
+    download_clevr_dataset,
+    download_clevrer_dataset,
+    download_kubric_dataset,
+    read_video_frames,
     noema_collate_fn,
     build_noema_dataloader,
 )
@@ -37,6 +43,7 @@ __all__ = [
     "ZeroInitResidualFiLM",
     "VICRegLoss",
     "NoemaWorldModelLoss",
+    "compute_loss",
     "VarianceWatchdog",
     "WatchdogReport",
     "VLLMThinkExtractor",
@@ -44,11 +51,16 @@ __all__ = [
     "ColabTrainer",
     "BaseNoemaDataset",
     "CLEVRDataset",
+    "CLEVRERDataset",
     "SomethingSomethingV2Dataset",
     "MultiObjectScenesDataset",
     "KubricMOViDataset",
     "ClassicVisionDataset",
     "SyntheticToyDataset",
+    "download_clevr_dataset",
+    "download_clevrer_dataset",
+    "download_kubric_dataset",
+    "read_video_frames",
     "noema_collate_fn",
     "build_noema_dataloader",
 ]

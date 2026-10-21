@@ -89,7 +89,7 @@ class NoemaConfig:
     use_amp: bool = True
     amp_dtype: str = "bfloat16" # Native brain floating point for A100/L4 (zero GradScaler overhead)
     grad_clip_norm: float = 1.0
-    use_compile: bool = True    # JIT kernel fusion for LayerNorm + ZeroInitResidualFiLM
+    use_compile: bool = False   # JIT kernel fusion (default False for seamless Colab stability)
     num_workers: int = 4
     pin_memory: bool = True
     persistent_workers: bool = True
@@ -97,13 +97,42 @@ class NoemaConfig:
 
     @classmethod
     def for_a100(cls, **kwargs) -> "NoemaConfig":
-        """High-performance preset calibrated for NVIDIA A100 (40GB / 80GB SXM/PCIe)."""
+        """High-performance preset calibrated for NVIDIA A100 (40GB / 80GB SXM/PCIe) for static images."""
         defaults = dict(
             batch_size=256,
             learning_rate=1e-3,
             amp_dtype="bfloat16",
-            use_compile=True,
+            use_compile=False,
             num_workers=8,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=2,
+        )
+        defaults.update(kwargs)
+        return cls(**defaults)
+
+    @classmethod
+    def for_a100_video(cls, num_frames: int = 4, **kwargs) -> "NoemaConfig":
+        """
+        High-throughput 5D video preset calibrated for NVIDIA A100 (40GB / 80GB SXM/PCIe).
+        Optimized for CLEVRER and Kubric MOVi dynamic collision physics.
+        Calibrates batch size for temporal clip volume [B, T, C, H, W] to saturate A100 Tensor Cores with TF32/bfloat16.
+        """
+        # Calibrate optimal batch size based on clip length to stay comfortably within A100 high-bandwidth VRAM
+        if num_frames <= 4:
+            bs = 64
+        elif num_frames <= 8:
+            bs = 48
+        else:
+            bs = 32
+
+        defaults = dict(
+            num_frames=num_frames,
+            batch_size=bs,
+            learning_rate=8e-4,
+            amp_dtype="bfloat16",
+            use_compile=False,
+            num_workers=4,
             pin_memory=True,
             persistent_workers=True,
             prefetch_factor=2,
@@ -128,10 +157,11 @@ class NoemaConfig:
         return cls(**defaults)
 
     @classmethod
-    def auto_detect_gpu(cls, **kwargs) -> "NoemaConfig":
+    def auto_detect_gpu(cls, is_video: bool = False, num_frames: int = 1, **kwargs) -> "NoemaConfig":
         """
         Dynamically detects available accelerator hardware and returns the optimal preset.
-        - Compute Capability >= 8.0 (Ampere/Ada/Hopper e.g. A100, L4, H100): bfloat16, compile, BS=256.
+        - Compute Capability >= 8.0 (Ampere/Ada/Hopper e.g. A100, L4, H100): bfloat16, TF32, compile.
+          Uses for_a100_video if is_video=True or num_frames > 1.
         - Compute Capability < 8.0 (Turing e.g. T4): float16, eager, BS=64.
         - CPU / Fallback: float32 eager fallback.
         """
@@ -139,8 +169,13 @@ class NoemaConfig:
         if torch.cuda.is_available():
             major, _ = torch.cuda.get_device_capability()
             if major >= 8:
+                if is_video or num_frames > 1:
+                    return cls.for_a100_video(num_frames=max(num_frames, 4), **kwargs)
                 return cls.for_a100(**kwargs)
             else:
+                if is_video or num_frames > 1:
+                    kwargs["num_frames"] = max(num_frames, 4)
+                    kwargs["batch_size"] = kwargs.get("batch_size", 16)
                 return cls.for_t4(**kwargs)
         else:
             defaults = dict(

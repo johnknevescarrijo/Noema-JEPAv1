@@ -39,16 +39,29 @@ class ThinkJEPABridge(nn.Module):
     def forward(self, think_embeddings: Optional[torch.Tensor] = None, batch_size: int = 1) -> torch.Tensor:
         """
         Args:
-            think_embeddings: Optional [B, vlm_dim] semantic context vectors from frozen VLM.
+            think_embeddings: Optional [B, vlm_dim] or [B, T, vlm_dim] semantic context vectors from frozen VLM.
             batch_size: Used if think_embeddings is None to generate matching batch dimension.
 
         Returns:
             Projected scene context vector c_scene of shape [B, embed_dim].
         """
-        if think_embeddings is None:
+        if (
+            think_embeddings is None
+            or not isinstance(think_embeddings, torch.Tensor)
+            or think_embeddings.numel() == 0
+        ):
             emb = self.fallback_context.expand(batch_size, -1)
         else:
             emb = think_embeddings
+            # Handle 1D tensor [vlm_dim] -> [1, vlm_dim]
+            if emb.ndim == 1:
+                emb = emb.unsqueeze(0)
+            # Handle 3D tensor [B, T, vlm_dim] -> pool over temporal dimension to [B, vlm_dim]
+            elif emb.ndim == 3:
+                emb = emb.mean(dim=1)
+            # Handle flattened temporal batch [B*T, vlm_dim] when batch_size B is provided
+            elif emb.ndim == 2 and batch_size > 0 and emb.size(0) != batch_size and (emb.size(0) % batch_size == 0):
+                emb = emb.view(batch_size, -1, self.vlm_dim).mean(dim=1)
 
         return self.projector(emb)
 
@@ -218,6 +231,23 @@ class NoemaJEPA(nn.Module):
             "modulation_scale": torch.tensor(modulation_scale, device=device),
         }
 
+    def compute_loss(
+        self,
+        outputs: Dict[str, torch.Tensor],
+        loss_fn: Optional[nn.Module] = None,
+    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        """
+        Convenience method to compute multi-component loss directly from model outputs.
+        Ensures compatibility with both 4D [B, C, H, W] and 5D [B, T, C, H, W] outputs.
+        """
+        if loss_fn is None:
+            if not hasattr(self, "_loss_fn_cache"):
+                from noema_jepa.losses.vicreg import NoemaWorldModelLoss
+                device = outputs["pred_masked_slots"].device
+                self._loss_fn_cache = NoemaWorldModelLoss(self.config).to(device)
+            loss_fn = self._loss_fn_cache
+        return loss_fn(outputs)
+
     def parameter_breakdown(self, print_table: bool = True) -> Dict[str, int]:
         """
         Computes exact parameter counts for all submodules.
@@ -240,6 +270,7 @@ class NoemaJEPA(nn.Module):
             total += cnt
 
         counts["Total"] = total
+        counts["Total Trainable Parameters"] = total
 
         if print_table:
             print("\n" + "=" * 65)

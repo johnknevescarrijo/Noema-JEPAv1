@@ -83,10 +83,19 @@ class SpatialPatchEncoder(nn.Module):
             x_flat = rearrange(x, "b t c h w -> (b t) c h w")
             patches = self.patch_embed(x_flat)  # [(B*T), D, H_grid, W_grid]
             patches = rearrange(patches, "(b t) d h w -> b t (h w) d", b=B, t=T)
-            # Add spatial and temporal embeddings
+            # Add spatial embeddings
             patches = patches + self.pos_embed.unsqueeze(1)
-            t_steps = min(T, self.temporal_embed.size(1))
-            patches = patches + self.temporal_embed[:, :t_steps]
+            
+            # Temporal embeddings: slice if T <= max_frames, otherwise interpolate
+            max_t = self.temporal_embed.size(1)
+            if T <= max_t:
+                temp_emb = self.temporal_embed[:, :T]
+            else:
+                temp_raw = self.temporal_embed.squeeze(2).permute(0, 2, 1)  # [1, D, max_t]
+                temp_interp = F.interpolate(temp_raw, size=T, mode="linear", align_corners=False)
+                temp_emb = temp_interp.permute(0, 2, 1).unsqueeze(2)  # [1, T, 1, D]
+
+            patches = patches + temp_emb
             # Flatten spatial and temporal dimensions into a single sequence: [B, T * N_patches, D]
             tokens = rearrange(patches, "b t n d -> b (t n) d")
         else:
