@@ -81,15 +81,81 @@ class NoemaConfig:
     vllm_max_model_len: int = 2048
     cache_dir: str = "./cache/think_embeddings"
 
-    # --- Training & Colab Optimization ---
-    batch_size: int = 32
-    learning_rate: float = 5e-4
+    # --- Training & Hardware Optimization (A100 / L4 Default) ---
+    batch_size: int = 256       # Optimized for A100 / VICReg batch variance (< 6GB VRAM footprint)
+    learning_rate: float = 1e-3 # Linearly scaled for batch size 256
     min_lr: float = 1e-6
     weight_decay: float = 1e-4
     use_amp: bool = True
-    amp_dtype: str = "float16"  # "float16" for Colab T4, "bfloat16" for L4 / A100
+    amp_dtype: str = "bfloat16" # Native brain floating point for A100/L4 (zero GradScaler overhead)
     grad_clip_norm: float = 1.0
-    use_compile: bool = False   # Optional torch.compile (requires Triton)
+    use_compile: bool = True    # JIT kernel fusion for LayerNorm + ZeroInitResidualFiLM
+    num_workers: int = 4
+    pin_memory: bool = True
+    persistent_workers: bool = True
+    prefetch_factor: int = 2
+
+    @classmethod
+    def for_a100(cls, **kwargs) -> "NoemaConfig":
+        """High-performance preset calibrated for NVIDIA A100 (40GB / 80GB SXM/PCIe)."""
+        defaults = dict(
+            batch_size=256,
+            learning_rate=1e-3,
+            amp_dtype="bfloat16",
+            use_compile=True,
+            num_workers=8,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=2,
+        )
+        defaults.update(kwargs)
+        return cls(**defaults)
+
+    @classmethod
+    def for_t4(cls, **kwargs) -> "NoemaConfig":
+        """Conservative memory preset tailored for Google Colab Free NVIDIA T4 (15GB)."""
+        defaults = dict(
+            batch_size=64,
+            learning_rate=5e-4,
+            amp_dtype="float16",
+            use_compile=False,
+            num_workers=2,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=2,
+        )
+        defaults.update(kwargs)
+        return cls(**defaults)
+
+    @classmethod
+    def auto_detect_gpu(cls, **kwargs) -> "NoemaConfig":
+        """
+        Dynamically detects available accelerator hardware and returns the optimal preset.
+        - Compute Capability >= 8.0 (Ampere/Ada/Hopper e.g. A100, L4, H100): bfloat16, compile, BS=256.
+        - Compute Capability < 8.0 (Turing e.g. T4): float16, eager, BS=64.
+        - CPU / Fallback: float32 eager fallback.
+        """
+        import torch
+        if torch.cuda.is_available():
+            major, _ = torch.cuda.get_device_capability()
+            if major >= 8:
+                return cls.for_a100(**kwargs)
+            else:
+                return cls.for_t4(**kwargs)
+        else:
+            defaults = dict(
+                batch_size=32,
+                learning_rate=3e-4,
+                amp_dtype="float32",
+                use_amp=False,
+                use_compile=False,
+                num_workers=0,
+                pin_memory=False,
+                persistent_workers=False,
+                prefetch_factor=None,
+            )
+            defaults.update(kwargs)
+            return cls(**defaults)
 
     def validate(self) -> None:
         """Sanity check configuration integrity."""

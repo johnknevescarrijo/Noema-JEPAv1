@@ -40,8 +40,9 @@ from noema_jepa.losses.vicreg import NoemaWorldModelLoss
 from noema_jepa.monitoring.variance_watchdog import VarianceWatchdog
 from noema_jepa.think_branch.vllm_extractor import VLLMThinkExtractor, DiskEmbeddingCache
 
-# Initialize Master Configuration
-config = NoemaConfig(
+# Initialize Master Configuration with auto-detection (calibrated for A100 / L4 / T4)
+# You can also explicitly choose: config = NoemaConfig.for_a100() or NoemaConfig.for_t4()
+config = NoemaConfig.auto_detect_gpu(
     img_size=128,
     embed_dim=288,
     encoder_depth=5,
@@ -50,8 +51,8 @@ config = NoemaConfig(
     num_masked_slots=4,
     vlm_dim=1536,
     vicreg_proj_dim=768,
-    batch_size=16,
 )
+print(f"Loaded Configuration: batch_size={config.batch_size}, lr={config.learning_rate}, amp_dtype={config.amp_dtype}, compile={config.use_compile}")
 
 # Instantiate Noema-JEPA World Model
 model = NoemaJEPA(config)
@@ -112,8 +113,13 @@ class SyntheticPhysicalDataset(Dataset):
         think_emb = torch.randn(self.vlm_dim)
         return {"images": img, "think_embeddings": think_emb}
 
-dataset = SyntheticPhysicalDataset(num_samples=64, img_size=config.img_size, vlm_dim=config.vlm_dim)
-dataloader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True)
+dataset = SyntheticPhysicalDataset(num_samples=512, img_size=config.img_size, vlm_dim=config.vlm_dim)
+dataloader = DataLoader(
+    dataset,
+    batch_size=config.batch_size,
+    shuffle=True,
+    pin_memory=(config.pin_memory and torch.cuda.is_available()),
+)
 
 # Setup Trainer with AMP & Watchdog
 trainer = ColabTrainer(model=model, config=config)
@@ -142,8 +148,8 @@ print("=" * 55)
 model.eval()
 with torch.no_grad():
     sample_batch = next(iter(dataloader))
-    imgs = sample_batch["images"].to(trainer.device)
-    thinks = sample_batch["think_embeddings"].to(trainer.device)
+    imgs = sample_batch["images"].to(trainer.device, non_blocking=True)
+    thinks = sample_batch["think_embeddings"].to(trainer.device, non_blocking=True)
     
     outputs = model(imgs, think_embeddings=thinks)
     

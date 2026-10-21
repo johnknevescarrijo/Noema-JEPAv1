@@ -763,15 +763,17 @@ def build_noema_dataloader(
     dataset_name: str,
     root: Union[str, Path] = "./data",
     split: str = "train",
-    batch_size: int = 32,
+    batch_size: int = 256,
     image_size: int = 128,
     num_frames: int = 1,
-    num_workers: int = 2,
+    num_workers: int = 4,
     shuffle: bool = True,
     cache_dir: Optional[Union[str, Path]] = None,
     download: bool = False,
     synthetic_fallback: bool = True,
     pin_memory: bool = True,
+    persistent_workers: Optional[bool] = None,
+    prefetch_factor: Optional[int] = 2,
     drop_last: bool = True,
     max_samples: Optional[int] = None,
 ) -> DataLoader:
@@ -790,15 +792,17 @@ def build_noema_dataloader(
         dataset_name: Target benchmark name (case-insensitive).
         root: Base storage path for raw datasets.
         split: Dataset split ('train', 'val', 'test').
-        batch_size: Batch size for training or evaluation.
+        batch_size: Batch size for training or evaluation (default 256 for A100).
         image_size: Square image resolution (default 128x128).
         num_frames: Frames per clip (1 for image, >1 for video).
-        num_workers: Subprocess data workers for DataLoader.
+        num_workers: Subprocess data workers for DataLoader (default 4).
         shuffle: Whether to shuffle samples each epoch.
         cache_dir: Directory containing precomputed ThinkJEPA safetensors embeddings.
         download: Auto-download dataset if supported by torchvision.
         synthetic_fallback: If True, uses zero-download procedural generator if files are absent.
-        pin_memory: Speed up CPU-to-GPU memory transfer on CUDA runtimes.
+        pin_memory: Speed up CPU-to-GPU memory transfer on CUDA runtimes (auto-disabled on CPU).
+        persistent_workers: Keep worker processes alive between epochs (defaults to True if num_workers > 0).
+        prefetch_factor: Number of batches loaded in advance by each worker (default 2 if num_workers > 0).
         drop_last: Drop the last non-full batch to stabilize VICReg batch statistics.
         max_samples: Optional cap on dataset size for rapid testing.
 
@@ -876,14 +880,23 @@ def build_noema_dataloader(
             f"Choose from: ['clevr', 'clevrer', 'ssv2', 'coco', 'voc', 'kubric', 'movi', 'stl10', 'cifar100', 'synthetic']"
         )
 
-    loader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
-        collate_fn=noema_collate_fn,
-        pin_memory=pin_memory and torch.cuda.is_available(),
-        drop_last=drop_last,
-    )
+    use_pin_memory = pin_memory and torch.cuda.is_available()
+    loader_kwargs: Dict[str, Any] = {
+        "dataset": dataset,
+        "batch_size": batch_size,
+        "shuffle": shuffle,
+        "num_workers": num_workers,
+        "collate_fn": noema_collate_fn,
+        "pin_memory": use_pin_memory,
+        "drop_last": drop_last,
+    }
 
+    if num_workers > 0:
+        loader_kwargs["persistent_workers"] = True if persistent_workers is None else persistent_workers
+        if prefetch_factor is not None:
+            loader_kwargs["prefetch_factor"] = prefetch_factor
+    elif persistent_workers is not None and persistent_workers:
+        loader_kwargs["persistent_workers"] = persistent_workers
+
+    loader = DataLoader(**loader_kwargs)
     return loader

@@ -46,6 +46,11 @@ class ColabTrainer:
         else:
             self.device = torch.device(device)
 
+        # Enable TF32 precision for Tensor Cores on Ampere/Ada/Hopper (A100 / L4)
+        if self.device.type == "cuda":
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+
         self.model = model.to(self.device)
         self.loss_fn = (loss_fn or NoemaWorldModelLoss(cfg)).to(self.device)
         self.watchdog = watchdog or VarianceWatchdog(cfg)
@@ -63,13 +68,17 @@ class ColabTrainer:
 
         self.scheduler = scheduler
 
-        # Optional torch.compile for PyTorch 2.0+ with CUDA
-        if cfg.use_compile and hasattr(torch, "compile") and self.device.type == "cuda":
-            print("[ColabTrainer] Compiling model with torch.compile()...")
-            try:
-                self.model = torch.compile(self.model)
-            except Exception as e:
-                print(f"[ColabTrainer Warning] torch.compile failed ({e}), continuing in eager mode.")
+        # Optional torch.compile for PyTorch 2.0+ (gracefully skipped on CPU or Triton absence)
+        if cfg.use_compile and hasattr(torch, "compile"):
+            if self.device.type == "cuda":
+                print("[ColabTrainer] Compiling model with torch.compile()...")
+                try:
+                    self.model = torch.compile(self.model)
+                except Exception as e:
+                    print(f"[ColabTrainer Warning] torch.compile failed ({e}), continuing in eager mode.")
+            else:
+                # Graceful CPU fallback (e.g. during local tests)
+                pass
 
         # Mixed Precision Setup
         self.use_amp = cfg.use_amp and (self.device.type == "cuda")
@@ -79,7 +88,10 @@ class ColabTrainer:
         else:
             self.amp_dtype = torch.float16
 
-        self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
+        # GradScaler is only enabled for float16. In bfloat16 (native A100/L4),
+        # dynamic range matches float32, making GradScaler unnecessary overhead.
+        scaler_enabled = self.use_amp and (self.amp_dtype == torch.float16)
+        self.scaler = torch.amp.GradScaler("cuda", enabled=scaler_enabled)
 
         self.global_step = 0
 
@@ -185,9 +197,10 @@ class ColabTrainer:
         """Saves model weights, optimizer, and watchdog state."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        raw_model = getattr(self.model, "_orig_mod", self.model)
         torch.save({
             "step": self.global_step,
-            "model_state": self.model.state_dict(),
+            "model_state": raw_model.state_dict(),
             "optimizer_state": self.optimizer.state_dict(),
             "watchdog_summary": self.watchdog.get_summary(),
             "config": self.config,
@@ -197,7 +210,8 @@ class ColabTrainer:
     def load_checkpoint(self, path: Union[str, Path]) -> None:
         """Loads checkpoint into model and optimizer."""
         checkpoint = torch.load(str(path), map_location=self.device)
-        self.model.load_state_dict(checkpoint["model_state"])
+        raw_model = getattr(self.model, "_orig_mod", self.model)
+        raw_model.load_state_dict(checkpoint["model_state"])
         self.optimizer.load_state_dict(checkpoint["optimizer_state"])
         self.global_step = checkpoint.get("step", 0)
         print(f"[ColabTrainer] Checkpoint loaded from {path} (resuming at step {self.global_step})")

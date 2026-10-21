@@ -231,13 +231,14 @@ Noema-JEPA provides built-in adapters for traditional world modeling, physical r
 ```python
 from noema_jepa.data import build_noema_dataloader
 
-# 1. CLEVR Slot Attention Benchmark
+# 1. CLEVR Slot Attention Benchmark (High-Throughput A100 Defaults)
 clevr_loader = build_noema_dataloader(
     dataset_name="clevr",
     root="./data/CLEVR_v1.0",
     split="train",
-    batch_size=32,
+    batch_size=256,
     image_size=128,
+    num_workers=4,
     cache_dir="./cache/think_embeddings",  # Auto-couples cached VLM reasoning!
 )
 
@@ -245,7 +246,7 @@ clevr_loader = build_noema_dataloader(
 ssv2_loader = build_noema_dataloader(
     dataset_name="ssv2",
     split="train",
-    batch_size=16,
+    batch_size=64,
     image_size=128,
     num_frames=4,  # Video clips [B, 4, 3, 128, 128]
 )
@@ -254,23 +255,29 @@ ssv2_loader = build_noema_dataloader(
 kubric_loader = build_noema_dataloader(
     dataset_name="kubric",
     split="train",
-    batch_size=16,
+    batch_size=64,
     num_frames=4,
 )
 
 # 4. Instant Colab Procedural Testing (Zero Download Required)
 toy_loader = build_noema_dataloader(
     dataset_name="synthetic",
-    batch_size=32,
+    batch_size=256,
     image_size=128,
 )
 ```
 
 ---
 
-## ⚡ Google Colab Two-Stage Pipeline
+## ⚡ Google Colab & NVIDIA A100/L4 High-Performance Pipeline
 
-Google Colab free-tier instances (NVIDIA T4 with 15 GB VRAM) cannot simultaneously host a 7B Vision-Language Model and train a high-batch world model without triggering Out-Of-Memory (OOM) faults. Noema-JEPA bypasses this via a clean **Two-Stage Workflow**:
+Google Colab runtimes range from free-tier **NVIDIA T4 (15 GB)** to **L4 (22.5 GB)** and **A100 (40 GB / 80 GB)**. Noema-JEPA provides hardware-adaptive configuration presets (`NoemaConfig.auto_detect_gpu()`, `for_a100()`, `for_t4()`):
+
+| Accelerator | Hardware Preset | Precision (`amp_dtype`) | `torch.compile` | Default Batch Size | DataLoader Workers | GradScaler Overhead |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: |
+| **NVIDIA A100 (SXM/PCIe)** | `NoemaConfig.for_a100()` | `bfloat16` + TF32 | **Enabled** | **256** (< 6GB VRAM) | 8 workers (pinned) | **None** (Bypassed) |
+| **NVIDIA L4 (Ada Lovelace)** | `NoemaConfig.for_a100()` | `bfloat16` + TF32 | **Enabled** | **256** | 4-8 workers (pinned) | **None** (Bypassed) |
+| **NVIDIA T4 (Turing Free)** | `NoemaConfig.for_t4()` | `float16` | Disabled | **64** | 2 workers (pinned) | Enabled (Dynamic) |
 
 ```
 STAGE 1: Offline Think Extraction (Run Once)
@@ -280,7 +287,7 @@ STAGE 1: Offline Think Extraction (Run Once)
                     del extractor; torch.cuda.empty_cache()  <-- 100% VRAM Recovered!
 
 STAGE 2: High-Speed Noema-JEPA World Model Training
-[Dataset Images] + [DiskEmbeddingCache] ──► [ColabTrainer (AMP fp16/bf16 + Watchdog)] ──► [Trained 15M Weights]
+[Dataset Images] + [DiskEmbeddingCache] ──► [ColabTrainer (bfloat16/TF32 + compile + Watchdog)] ──► [Trained 15M Weights]
 ```
 
 ### Stage 1: Fast VLM Extraction with vLLM
@@ -308,11 +315,19 @@ extractor.release_gpu_memory()
 from noema_jepa import NoemaConfig, NoemaJEPA, ColabTrainer
 from noema_jepa.data import build_noema_dataloader
 
-config = NoemaConfig(embed_dim=288, num_slots=8, batch_size=32)
+# Auto-detects A100 / L4 / T4 (sets bfloat16, TF32, torch.compile, batch_size=256, lr=1e-3)
+# Or select explicitly: config = NoemaConfig.for_a100() or NoemaConfig.for_t4()
+config = NoemaConfig.auto_detect_gpu()
 model = NoemaJEPA(config)
 trainer = ColabTrainer(model=model, config=config)
 
-loader = build_noema_dataloader("clevr", batch_size=32, cache_dir="./cache/think_embeddings")
+loader = build_noema_dataloader(
+    "clevr",
+    batch_size=config.batch_size,
+    num_workers=config.num_workers,
+    pin_memory=config.pin_memory,
+    cache_dir="./cache/think_embeddings",
+)
 
 for epoch in range(10):
     for batch in loader:
