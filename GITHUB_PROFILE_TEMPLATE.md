@@ -1,20 +1,25 @@
 <div align="center">
 
-  <!-- Typing SVG Header -->
+  <!-- Hermes Agent / Nous Girl Hero Mascot Banner -->
+  <a href="https://hermes-agent.nousresearch.com">
+    <img src="https://raw.githubusercontent.com/NousResearch/hermes-agent/main/assets/nous-girl.svg" width="140" height="140" alt="Hermes Agent - Nous Girl Mascot" style="border-radius: 50%; filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.45));" />
+  </a>
+
+  <!-- Typing SVG Dynamic Header -->
   <a href="https://git.io/typing-svg">
-    <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=26&duration=3000&pause=1000&color=38BDF8&center=true&vCenter=true&multiline=true&width=750&height=100&lines=Hi%2C+I'm+John+%F0%9F%91%8B;Building+World+Models+%26+Robotic+Learning+Systems;Exploring+Embodied+AI%2C+JEPA+%26+Autonomous+Agents" alt="Typing SVG" />
+    <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=26&duration=3000&pause=1000&color=38BDF8&center=true&vCenter=true&multiline=true&width=750&height=100&lines=Hi%2C+I'm+John+Kennedy+%F0%9F%91%8B;Building+World+Models+%26+Robotic+Learning+Systems;Researching+Embodied+AI%2C+Autonomous+Agents+%26+JEPA" alt="Typing SVG" />
   </a>
 
   <p align="center">
     <strong>Robotics Engineer & AI Researcher</strong> passionate about bridging perception, world models, and physical agency.
   </p>
 
-  <!-- Social & Quick Badges -->
+  <!-- Connect & Social Badges -->
   <p align="center">
-    <a href="https://linkedin.com/in/SEU_LINKEDIN"><img src="https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn" /></a>
-    <a href="https://x.com/SEU_TWITTER"><img src="https://img.shields.io/badge/X-000000?style=for-the-badge&logo=x&logoColor=white" alt="X/Twitter" /></a>
-    <a href="mailto:SEU_EMAIL@exemplo.com"><img src="https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white" alt="Email" /></a>
-    <a href="https://scholar.google.com"><img src="https://img.shields.io/badge/Scholar-4285F4?style=for-the-badge&logo=google-scholar&logoColor=white" alt="Google Scholar" /></a>
+    <a href="https://www.linkedin.com/in/john-kennedy-neves-carrijo-7997a0308/"><img src="https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn" /></a>
+    <a href="mailto:johncarrijo2255@gmail.com"><img src="https://img.shields.io/badge/Email-D14836?style=for-the-badge&logo=gmail&logoColor=white" alt="Email" /></a>
+    <a href="https://github.com/johnknevescarrijo"><img src="https://img.shields.io/badge/GitHub-johnknevescarrijo-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub" /></a>
+    <a href="https://hermes-agent.nousresearch.com"><img src="https://img.shields.io/badge/Hermes_Agent-NousResearch-9333EA?style=for-the-badge&logo=openai&logoColor=white" alt="Hermes Agent" /></a>
   </p>
 
 </div>
@@ -23,11 +28,11 @@
 
 ### 🧠 About Me & Research Mission
 
-I am an AI researcher & robotics developer dedicated to building **embodied intelligent systems** that can perceive, predict, and physically interact with the real world. My current work centers on:
+I am an AI researcher & robotics developer dedicated to building **embodied intelligent systems** that can perceive, predict, and physically interact with the real world. Inspired by autonomous reasoning agents (like **Hermes Agent**) and predictive cognitive architectures, my work centers on:
 
 - 🌐 **World Models & Self-Supervised Learning:** Designing object-centric predictive latent representations (JEPAs, Slot Attention, C-JEPA, VICReg) to forecast physical causality without pixel hallucinations.
 - 🦾 **Robotic Learning & Manipulation:** Training reactive and long-horizon policies via Imitation Learning, Diffusion Policies, Reinforcement Learning, and Vision-Language-Action (VLA) foundations.
-- 🤖 **Autonomous Embodied Agents:** Integrating cognitive reasoning loops, spatial memory, and physical affordances into autonomous robotic architectures.
+- 🤖 **Autonomous Cognitive Agents:** Integrating cognitive reasoning loops, spatial memory, and physical affordances into autonomous robotic architectures.
 - ⚡ **High-Efficiency AI Deployment:** Scaling simulation-to-real transfer with accelerated inference engines (vLLM, TensorRT, Isaac Sim/Lab).
 
 ---
@@ -58,8 +63,8 @@ I am an AI researcher & robotics developer dedicated to building **embodied inte
       <h4>🤖 Autonomous Cognitive Agents</h4>
       <ul>
         <li><strong>Closed-Loop Agency:</strong> Perception ➔ Latent World Model ➔ Hierarchical Planning ➔ Motor Control.</li>
+        <li><strong>Hermes Agent & Tooling:</strong> Self-improving skill acquisition, recursive reasoning & persistent memory loops.</li>
         <li><strong>Spatial & Episodic Memory:</strong> 3D Scene Graphs, topological maps & semantic vector retrieval.</li>
-        <li><strong>Multi-Agent Coordination:</strong> Decentralized policy execution & emergent physical cooperation.</li>
       </ul>
     </td>
     <td width="50%" valign="top">
@@ -97,7 +102,7 @@ I am an AI researcher & robotics developer dedicated to building **embodied inte
       </p>
     </td>
     <td width="50%">
-      <h3 align="center">🦾 Embodied-Policy-Lab <i>(Placeholder)</i></h3>
+      <h3 align="center">🦾 Embodied-Policy-Lab <i>(WIP)</i></h3>
       <p align="center">
         <strong>Diffusion Policy & Sim-to-Real Benchmark</strong>
       </p>
