@@ -1,9 +1,28 @@
 <div align="center">
 
-  <!-- Hermes Agent / Nous Girl Hero Mascot Banner -->
-  <a href="https://hermes-agent.nousresearch.com">
-    <img src="https://raw.githubusercontent.com/NousResearch/hermes-agent/main/assets/nous-girl.svg" width="140" height="140" alt="Hermes Agent - Nous Girl Mascot" style="border-radius: 50%; filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.45));" />
-  </a>
+<!-- ========================================== -->
+<!--       HERMES // NOUS GIRL ASCII ART        -->
+<!-- ========================================== -->
+```text
+                         .----------------.
+                        /   \          /   \
+                       /     \        /     \
+                      /       \  /\  /       \
+                     /         \/  \/         \
+             .---.  |     _              _     |  .---.
+            | [=] | |    / \            / \    | | [=] |      __  __ ___ ___ __  __ ___ ___ 
+            | [=] | |   | (o)          (o) |   | | [=] |     |  \/  | __| _ \  \/  | __/ __|
+            | [=] | |    \_/     /\     \_/    | | [=] |     | |\/| | _||   / |\/| | _|\__ \
+             "---"   \          /  \          /   "---"      |_|  |_|___|_|_\_|  |_|___|___/
+                      \         \__/         /               < NOUS COGNITIVE AGENT >
+                       \                    /
+                        \     .------.     /
+                         \   (  ====  )   /
+                          `---\______/---`
+                               /    \
+                              /  /\  \
+                             /  /  \  \
+```
 
   <!-- Typing SVG Dynamic Header -->
   <a href="https://git.io/typing-svg">
