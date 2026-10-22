@@ -87,14 +87,20 @@ def setup_noema_environment():
     else:
         print("⚠️ [Setup] Could not locate 'noema_jepa' automatically. Please check your path.")
 
-    # Install minimal Colab dependencies if missing
+    # Install minimal Colab dependencies if missing (Colab already provides torch, torchvision, numpy, etc.)
     if in_colab:
+        missing = []
         for pkg in ["einops", "safetensors"]:
             try:
                 __import__(pkg)
             except ImportError:
-                print(f"📦 [Colab Setup] Installing missing dependency: {pkg}...")
-                subprocess.run([sys.executable, "-m", "pip", "install", "-q", pkg], check=True)
+                missing.append(pkg)
+        if missing:
+            print(f"⚡ [Colab Setup] Fast installation of minimal dependencies ({', '.join(missing)})...")
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-q", "--no-cache-dir", *missing],
+                check=True,
+            )
 
     # Validate import
     try:

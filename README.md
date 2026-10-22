@@ -341,8 +341,21 @@ for epoch in range(10):
 ## 🚀 Quickstart & Verification
 
 ### 1. Installation
+
+#### In Google Colab (Instant in ~3 seconds):
+> [!TIP]
+> Google Colab already has `torch`, `torchvision`, `numpy`, and `matplotlib` pre-installed. You only need the lightweight dependencies:
 ```bash
-git clone https://github.com/Noema-AI/Noema-JEPAv1.git
+!git clone https://github.com/johnknevescarrijo/Noema-JEPAv1.git
+%cd /content/Noema-JEPAv1
+!pip install -q --no-cache-dir einops safetensors
+!pip install -q --no-deps -e .
+```
+*(Note: `vllm` is completely optional for reasoning embeddings; `Noema-JEPA` includes an automatic zero-overhead mock fallback so you don't waste 5+ minutes downloading 4 GB of vLLM packages).*
+
+#### Local Environment:
+```bash
+git clone https://github.com/johnknevescarrijo/Noema-JEPAv1.git
 cd Noema-JEPAv1
 pip install -e .
 ```
