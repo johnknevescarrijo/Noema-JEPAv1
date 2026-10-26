@@ -170,11 +170,11 @@ from noema_jepa.data import (
 )
 from noema_jepa.train.colab_trainer import ColabTrainer
 
-# Calibrate preset for A100 with 5D video clips (T=4 frames)
+# Calibrate preset for A100/L4 with 5D video clips (T=4 frames)
 config = NoemaConfig.for_a100_video(
     num_frames=4,
-    batch_size=64,       # High batch size exploiting A100 40GB/80GB memory bandwidth
-    learning_rate=8e-4,
+    batch_size=64,       # High batch size exploiting A100/L4 memory bandwidth
+    learning_rate=3e-4,  # Calibrated for stable, non-divergent 30+ epoch convergence
     amp_dtype="bfloat16",
     use_compile=False,   # Set True for torch.compile JIT acceleration if Triton is supported
     num_workers=4,

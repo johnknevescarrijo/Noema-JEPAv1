@@ -7,6 +7,7 @@ Engineered with:
 - Low-overhead memory management, optional torch.compile, and throughput tracking.
 """
 
+import math
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterator, Optional, Tuple, Union
@@ -66,7 +67,22 @@ class ColabTrainer:
         else:
             self.optimizer = optimizer
 
-        self.scheduler = scheduler
+        # Scheduler (automatic Cosine Annealing with Warmup if enabled)
+        if scheduler is None and getattr(cfg, "use_scheduler", False):
+            warmup = max(1, getattr(cfg, "warmup_steps", 50))
+            total = max(warmup + 1, getattr(cfg, "total_steps", 1000))
+
+            def lr_lambda(step: int) -> float:
+                if step < warmup:
+                    return float(step + 1) / float(warmup)
+                progress = min(1.0, float(step - warmup) / float(max(1, total - warmup)))
+                cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+                min_ratio = cfg.min_lr / max(cfg.learning_rate, 1e-8)
+                return min_ratio + (1.0 - min_ratio) * cosine
+
+            self.scheduler = torch.optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda)
+        else:
+            self.scheduler = scheduler
 
         # Optional torch.compile for PyTorch 2.0+ (gracefully skipped on CPU or Triton absence)
         self.is_compiled = False

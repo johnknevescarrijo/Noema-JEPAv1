@@ -46,8 +46,11 @@ runs/
 wandb/
 
 # Data and Cache
+data/
 data_cache/
+cache/
 .cache/
+*.jsonl
 *.parquet
 *.arrow
 

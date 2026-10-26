@@ -86,6 +86,8 @@ class NoemaConfig:
     learning_rate: float = 1e-3 # Linearly scaled for batch size 256
     min_lr: float = 1e-6
     weight_decay: float = 1e-4
+    use_scheduler: bool = True  # CosineAnnealingLR with warmup enabled by default
+    warmup_steps: int = 50      # Linear warmup steps for stable representation formation
     use_amp: bool = True
     amp_dtype: str = "bfloat16" # Native brain floating point for A100/L4 (zero GradScaler overhead)
     grad_clip_norm: float = 1.0
@@ -129,13 +131,15 @@ class NoemaConfig:
         defaults = dict(
             num_frames=num_frames,
             batch_size=bs,
-            learning_rate=8e-4,
+            learning_rate=3e-4,  # Calibrated for stable, non-divergent 30+ epoch convergence
             amp_dtype="bfloat16",
             use_compile=False,
             num_workers=4,
             pin_memory=True,
             persistent_workers=True,
             prefetch_factor=2,
+            use_scheduler=True,
+            warmup_steps=50,
         )
         defaults.update(kwargs)
         return cls(**defaults)
