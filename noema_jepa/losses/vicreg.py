@@ -106,11 +106,63 @@ class VICRegLoss(nn.Module):
         return total_vicreg, metrics
 
 
+class SIGRegLoss(nn.Module):
+    """
+    Spectral Invariance & Log-Determinant Covariance Regularizer (SIGReg).
+
+    Prevents dimensional collapse and variance shrinkage by maximizing the log-determinant
+    of the regularized covariance matrix C = 1/(N-1) Z^T Z + eps*I in float32, while
+    penalizing normalized off-diagonal correlations.
+    """
+
+    def __init__(self, eps: float = 1e-4) -> None:
+        super().__init__()
+        self.eps = eps
+
+    def _compute_single(self, z: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        z_f32 = z.float()
+        N, D = z_f32.shape
+        if N <= 1:
+            zero_t = torch.tensor(0.0, device=z.device, dtype=torch.float32)
+            return zero_t, zero_t
+
+        z_centered = z_f32 - z_f32.mean(dim=0, keepdim=True)
+        cov = (z_centered.T @ z_centered) / max(N - 1, 1)
+        cov_reg = cov + self.eps * torch.eye(D, device=z.device, dtype=torch.float32)
+
+        # Log determinant maximization: slogdet(C)
+        sign, logdet = torch.linalg.slogdet(cov_reg)
+        spectral_penalty = - (logdet / D)
+
+        # Off-diagonal decorrelation
+        diag = torch.diagonal(cov_reg)
+        norm_factor = torch.sqrt(diag.unsqueeze(1) * diag.unsqueeze(0) + 1e-8)
+        corr = cov_reg / norm_factor
+        decorr_penalty = off_diagonal(corr).pow(2).mean()
+
+        total = spectral_penalty + decorr_penalty
+        return total, spectral_penalty
+
+    def forward(
+        self, z_pred: torch.Tensor, z_target: torch.Tensor
+    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        loss_p, spec_p = self._compute_single(z_pred)
+        loss_t, spec_t = self._compute_single(z_target)
+        sigreg_total = (loss_p + loss_t) / 2.0
+        metrics = {
+            "sigreg_loss": sigreg_total.item(),
+            "sigreg_spectral_penalty": ((spec_p + spec_t) / 2.0).item(),
+        }
+        return sigreg_total, metrics
+
+
 class NoemaWorldModelLoss(nn.Module):
     """
-    Unified Loss for Noema-JEPA v1:
-    L_total = lambda_pred * L_pred
+    Unified Loss for Noema-JEPA v2:
+    L_total = lambda_pred * L_pred (Smooth L1 + Cosine Sim)
             + lambda_vicreg * L_vicreg
+            + lambda_sigreg * L_sigreg
+            + lambda_temporal * L_temporal_pred (for video multi-step rollout)
             + lambda_intra * L_intra_var
             + lambda_think * L_think_aux
     """
@@ -127,10 +179,16 @@ class NoemaWorldModelLoss(nn.Module):
             gamma=cfg.gamma_target,
         )
 
+        self.sigreg = SIGRegLoss(eps=1e-4)
+
         self.pred_loss_weight = cfg.pred_loss_weight
         self.intra_var_loss_weight = cfg.intra_var_loss_weight
         self.min_intra_std = cfg.min_intra_std
         self.think_loss_weight = cfg.think_loss_weight
+
+        self.use_sigreg_loss = getattr(cfg, "use_sigreg_loss", True)
+        self.lambda_sigreg = getattr(cfg, "lambda_sigreg", 0.1)
+        self.temporal_loss_weight = getattr(cfg, "temporal_loss_weight", 1.0)
 
     def update_think_loss_weight(self, new_weight: float) -> None:
         """Allows VarianceWatchdog to dynamically adapt ThinkJEPA influence."""
@@ -154,32 +212,51 @@ class NoemaWorldModelLoss(nn.Module):
         pred_think_proj = outputs["pred_think_proj"]   # [B, D]
         c_scene = outputs["c_scene"]                   # [B, D]
 
-        # 1. Masked slot reconstruction prediction loss (Smooth L1)
-        pred_loss = F.smooth_l1_loss(pred_masked, target_masked.detach())
+        # 1. Masked slot prediction loss: Smooth L1 + Cosine Alignment
+        # Combining geometric distance with directional alignment dramatically boosts Cosine Sim
+        l1_loss = F.smooth_l1_loss(pred_masked, target_masked.detach())
+        cos_sim_slots = F.cosine_similarity(pred_masked, target_masked.detach(), dim=-1).mean()
+        pred_loss = l1_loss + (1.0 - cos_sim_slots)
 
         # 2. VICReg loss
         vicreg_total, vicreg_metrics = self.vicreg(pred_vicreg, target_vicreg)
 
-        # 3. Intra-scene variance penalty
+        # 3. SIGReg Spectral Invariance & Log-Det Regularization
+        if self.use_sigreg_loss:
+            sigreg_total, sigreg_metrics = self.sigreg(pred_vicreg, target_vicreg)
+        else:
+            sigreg_total = torch.tensor(0.0, device=pred_masked.device)
+            sigreg_metrics = {"sigreg_loss": 0.0}
+
+        # 4. Multi-Step Temporal Rollout Prediction Loss (SAVi-style video tracking)
+        loss_temporal = torch.tensor(0.0, device=pred_masked.device)
+        temporal_cos_sim_val = 1.0
+        if "pred_next_slots" in outputs and "target_next_slots" in outputs:
+            pred_next = outputs["pred_next_slots"]
+            target_next = outputs["target_next_slots"]
+            temp_l1 = F.smooth_l1_loss(pred_next, target_next.detach())
+            temp_cos = F.cosine_similarity(pred_next, target_next.detach(), dim=-1).mean()
+            loss_temporal = temp_l1 + (1.0 - temp_cos)
+            temporal_cos_sim_val = temp_cos.item()
+
+        # 5. Intra-scene variance penalty
         # Protects against FiLM flattening all object slots within a scene to the same representation
-        # Computed in fp32
         slots_f32 = all_pred_slots.float()  # [B, S, D]
-        # Variance across slots dimension for each sample in batch: [B, D]
-        # unbiased=False prevents NaN if num_slots is 1
         intra_var = slots_f32.var(dim=1, unbiased=False) + 1e-4
         intra_std = torch.sqrt(intra_var).mean(dim=-1)  # [B]
         mean_intra_std = intra_std.mean()
         intra_scene_loss = torch.mean(F.relu(self.min_intra_std - intra_std))
 
-        # 4. ThinkJEPA semantic alignment auxiliary loss (Cosine similarity)
-        # pooled slot representation aligned with c_scene
+        # 6. ThinkJEPA semantic alignment auxiliary loss (Cosine similarity)
         cos_sim = F.cosine_similarity(pred_think_proj, c_scene.detach(), dim=-1)
         think_aux_loss = torch.mean(1.0 - cos_sim)
 
-        # 5. Total composite loss
+        # 7. Total composite loss
         total_loss = (
             self.pred_loss_weight * pred_loss
             + vicreg_total
+            + (self.lambda_sigreg * sigreg_total if self.use_sigreg_loss else 0.0)
+            + self.temporal_loss_weight * loss_temporal
             + self.intra_var_loss_weight * intra_scene_loss
             + self.think_loss_weight * think_aux_loss
         )
@@ -189,14 +266,21 @@ class NoemaWorldModelLoss(nn.Module):
             "loss": total_loss.item(),
             "loss_pred": pred_loss.item(),
             "pred_loss": pred_loss.item(),
+            "loss_smooth_l1": l1_loss.item(),
+            "cosine_sim_pred_target": cos_sim_slots.item(),
+            "pred_cosine_sim": cos_sim_slots.item(),
             "loss_vicreg": vicreg_total.item(),
             "vicreg_loss": vicreg_total.item(),
+            "loss_sigreg": sigreg_total.item() if isinstance(sigreg_total, torch.Tensor) else float(sigreg_total),
+            "loss_temporal": loss_temporal.item(),
+            "temporal_cos_sim": temporal_cos_sim_val,
             "loss_intra_scene": intra_scene_loss.item(),
             "loss_think_aux": think_aux_loss.item(),
             "metric_intra_scene_std": mean_intra_std.item(),
             "intra_std": mean_intra_std.item(),
             "active_think_loss_weight": self.think_loss_weight,
             **vicreg_metrics,
+            **sigreg_metrics,
         }
 
         return total_loss, metrics
