@@ -326,9 +326,90 @@ def test_colab_trainer_video_training(model: NoemaJEPA, config: NoemaConfig):
     print(">>> ColabTrainer 5D Video Training: PASSED\n")
 
 
+def test_v2_features(model: NoemaJEPA, config: NoemaConfig):
+    print("=" * 70)
+    print("STEP 8: Validating Noema-JEPA v2 Enhancements")
+    print("        (EMA Target, SAVi Tracking, Action Cond, FSQ, SIGReg)")
+    print("=" * 70)
+
+    device = next(model.parameters()).device
+    B, T = 2, 4
+    C, H, W = config.in_channels, config.img_size, config.img_size
+    actions = torch.randn(B, T, config.action_dim, device=device)
+    video = torch.randn(B, T, C, H, W, device=device)
+    think = torch.randn(B, config.vlm_dim, device=device)
+
+    # 1. EMA Target Encoder
+    print("[*] 1. Testing EMA Target Encoder & Teacher/Student Isolation...")
+    assert hasattr(model, "target_encoder"), "Model missing target_encoder!"
+    assert hasattr(model, "target_slot_attention"), "Model missing target_slot_attention!"
+    for p in model.target_encoder.parameters():
+        assert not p.requires_grad, "target_encoder parameter requires_grad must be False!"
+    for p in model.target_slot_attention.parameters():
+        assert not p.requires_grad, "target_slot_attention parameter requires_grad must be False!"
+
+    # Verify update_ema alters weights
+    p_s = next(model.encoder.parameters())
+    p_t = next(model.target_encoder.parameters())
+    orig_t_val = p_t.clone()
+    p_s.data.add_(0.5)
+    model.update_ema(momentum=0.9)
+    assert not torch.allclose(orig_t_val, p_t), "update_ema failed to update target parameters!"
+    print("    - EMA Target Encoder Teacher/Student Isolation & Update: PASSED")
+
+    # 2. SAVi Temporal Slot Tracking & Multi-Step Rollout
+    print("[*] 2. Testing SAVi-Style Recurrent Slot Tracking & Multi-Step Rollout...")
+    out_v2 = model(video, think_embeddings=think, actions=actions)
+    assert "pred_next_slots" in out_v2, "pred_next_slots missing from video forward pass!"
+    assert "target_next_slots" in out_v2, "target_next_slots missing from video forward pass!"
+    assert "slot_trajectories" in out_v2, "slot_trajectories missing!"
+    assert "target_slot_trajectories" in out_v2, "target_slot_trajectories missing!"
+
+    pred_next = out_v2["pred_next_slots"]
+    tgt_next = out_v2["target_next_slots"]
+    print(f"    - Temporal Rollout: pred_next shape {tuple(pred_next.shape)}, target_next {tuple(tgt_next.shape)}")
+    assert pred_next.shape == (B, T - 1, config.num_slots, config.embed_dim)
+    assert tgt_next.shape == (B, T - 1, config.num_slots, config.embed_dim)
+    print("    - SAVi Tracking & Rollout: PASSED")
+
+    # 3. Action Conditioning
+    print("[*] 3. Testing Action Conditioning on Predictor...")
+    single_action = torch.randn(B, config.action_dim, device=device)
+    img = torch.randn(B, C, H, W, device=device)
+    out_act = model(img, think_embeddings=think, actions=single_action)
+    assert out_act["pred_masked_slots"].shape == (B, config.num_masked_slots, config.embed_dim)
+    print("    - Action Conditioning Forward: PASSED")
+
+    # 4. Symbolic FSQ Quantizer
+    print("[*] 4. Testing Finite Scalar Quantizer (FSQ)...")
+    assert hasattr(model, "fsq_quantizer"), "fsq_quantizer missing from model!"
+    assert "fsq_perplexity" in out_v2, "fsq_perplexity missing in outputs!"
+    assert "fsq_codebook_usage" in out_v2, "fsq_codebook_usage missing in outputs!"
+    fsq_idx = model.fsq_quantizer.get_codebook_indices(out_v2["context_slots"])
+    print(f"    - Discrete codebook indices shape: {tuple(fsq_idx.shape)}, usage: {float(out_v2['fsq_codebook_usage']):.4f}")
+    assert fsq_idx.min() >= 0 and fsq_idx.max() < model.fsq_quantizer.total_codes
+    print("    - FSQ Symbolic Quantization: PASSED")
+
+    # 5. LayerNorm VICReg Variance Health & SIGReg Loss
+    print("[*] 5. Validating LayerNorm VICReg Projector & SIGReg Anti-Collapse...")
+    from noema_jepa.losses.vicreg import SIGRegLoss
+    sigreg_fn = SIGRegLoss(eps=1e-4)
+    loss_s, m_s = sigreg_fn(out_v2["pred_vicreg_proj"], out_v2["target_vicreg_proj"])
+    assert not torch.isnan(loss_s), "SIGReg loss is NaN!"
+    print(f"    - SIGReg Loss: {loss_s.item():.4f}")
+
+    loss_v2, m_v2 = model.compute_loss(out_v2)
+    std_pred = m_v2["vicreg_std_pred"]
+    print(f"    - LayerNorm vicreg_std_pred: {std_pred:.4f} (v1 collapsed value was ~0.0102)")
+    assert std_pred > 0.05, f"Variance still collapsed! std_pred={std_pred}"
+    print("    - LayerNorm VICReg Projector & SIGReg: PASSED")
+
+    print(">>> All Noema-JEPA v2 Features Verified: PASSED\n")
+
+
 def main():
     print("\n" + "#" * 70)
-    print("   NOEMA-JEPA v1 (~15M Parameters) ARCHITECTURE VERIFICATION   ")
+    print("   NOEMA-JEPA v2 (~15M Parameters) ARCHITECTURE VERIFICATION   ")
     print("#" * 70)
 
     import math
@@ -339,9 +420,10 @@ def main():
     test_think_cache()
     test_traditional_datasets()
     test_colab_trainer_video_training(model, config)
+    test_v2_features(model, config)
 
     print("=" * 70)
-    print("ALL TESTS PASSED SUCCESSFULLY! ARCHITECTURE IS 100% READY FOR A100.")
+    print("ALL TESTS PASSED SUCCESSFULLY! NOEMA-JEPA v2 IS 100% OPERATIONAL.")
     print("=" * 70 + "\n")
 
 

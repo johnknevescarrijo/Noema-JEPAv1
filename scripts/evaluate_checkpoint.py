@@ -121,13 +121,19 @@ def evaluate_checkpoint(
     avg_intra_std = total_intra_scene_std / batches_processed
 
     print("\n" + "=" * 70)
-    print("                 CHECKPOINT EVALUATION REPORT")
+    print(f"                 NOEMA-JEPA {getattr(config, 'model_version', 'v2').upper()} EVALUATION REPORT")
     print("=" * 70)
-    print(f"  Avg Multi-Component Loss:              {avg_loss:.4f}")
-  # Target benchmark for C-JEPA: Cosine similarity > 0.85
+    print(f"  Avg Multi-Component Loss:                    {avg_loss:.4f}")
     print(f"  Avg Slot Cosine Similarity (Pred vs Target): {avg_cos_sim:.4f}  ({'PASSED (High Fidelity)' if avg_cos_sim > 0.80 else 'ACCEPTABLE'})")
     print(f"  Avg Slot Latent Diversity (Std Dev):         {avg_slot_std:.4f}  ({'HIGH DIVERSITY' if avg_slot_std > 2.0 else 'NORMAL'})")
     print(f"  Avg Intra-Scene Slot Separation Std:         {avg_intra_std:.4f}  ({'NO COLLAPSE' if avg_intra_std > config.watchdog_std_threshold else 'COLLAPSE RISK'})")
+    if "vicreg_std_pred" in metrics_accum:
+        avg_vic_std = metrics_accum["vicreg_std_pred"] / batches_processed
+        print(f"  Avg VICReg Latent Std (Pred):                {avg_vic_std:.4f}  ({'HEALTHY' if avg_vic_std > 0.20 else 'SHRINKAGE'})")
+    if "fsq_codebook_usage" in metrics_accum:
+        avg_fsq_use = metrics_accum["fsq_codebook_usage"] / batches_processed
+        avg_fsq_ppl = metrics_accum.get("fsq_perplexity", 0.0) / batches_processed
+        print(f"  FSQ Symbolic Codebook Usage:                 {avg_fsq_use * 100:.2f}% (Perplexity: {avg_fsq_ppl:.2f})")
     print("-" * 70)
     print("  Detailed Loss Component Averages:")
     for k, v in metrics_accum.items():
