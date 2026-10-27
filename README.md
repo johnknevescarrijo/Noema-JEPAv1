@@ -197,12 +197,12 @@ $$
 
 **Where:**
 - $S_{t-1} \in \mathbb{R}^{K \times D}$ is the discovered object slot state from previous time step $t-1$.
-- $f_{\text{trans}}(\cdot)$ é uma rede neural feedforward de 2 camadas with LayerNorm e ativação GELU, inicializada with pesos zero na última camada linear ($`init.zeros_`$).
+- $f_{\text{trans}}(\cdot)$ is a 2-layer feedforward neural network with LayerNorm and GELU activations, initialized with zero weights on the final linear projection (`torch.nn.init.zeros_`).
 - This residual initialization guarantees that at training onset, transitions begin as strict identities ($S_t^{\text{init}} \approx S_{t-1}$), enabling the model to smoothly learn velocities, accelerations, and temporal persistence without gradient shock.
 
 ---
 
-### 2. Finite Scalar Quantization (FSQ - Discretização Simbólica de Slots)
+### 2. Finite Scalar Quantization (FSQ - Discrete Symbolic Grounding)
 
 To enable structured symbolic reasoning and discrete grounding without the codebook collapif vulnerabilities of traditional VQ-VAEs, Noema-JEPA v2 integrates a **Finite Scalar Quantizer (FSQ)** directly over continuous object slots.
 
@@ -234,14 +234,14 @@ $$
 - $s_d = \frac{L_d - 1}{2}$ is the quantization half-width per channel. The scaling $\tanh(z_d) \cdot s_d$ analytically bounds continuous representations strictly within $[-s_d, s_d]$.
 - $\text{round}(\cdot)$ rounds bounded continuous values to the nearest integer grid points.
 - $\text{sg}(\cdot)$ denotes the stop-gradient operator. Forward passes propagate discretized codes $\hat{z}$, while backward gradients bypass quantization via the Straight-Through Estimator (STE).
-- $\lambda_{\text{fsq}} = 0.15$ é o peso residual da mistura. Como $W_{\text{out}}$ é inicializado with desvio padrão quaif nulo ($10^{-4}$), a geometria latente contínua dos slots é perfeitamente preservada no início do treino, enquanto o vocabulário discreto vai sendo ancorado de forma suave e estável.
+- $\lambda_{\text{fsq}} = 0.15$ is the residual mixing weight. Because $W_{\text{out}}$ is initialized with near-zero standard deviation ($10^{-4}$), the continuous slot geometry is fully preserved at the beginning of training, while discrete concepts are anchored stably and smoothly.
 - $\text{Index} \in \{0, 1, \dots, 999\}$ is the unique discrete code index mapped for symbolic inspection, codebook usage, and perplexity tracking.
 
 ---
 
 ### 3. Slot-Adaptive Zero-Init Residual FiLM (`ZeroInitResidualFiLM`)
 
-O Noema-JEPA v2 condiciona as transições físicas de objetos às informações semânticas globais $c_{\text{scene}}$ fornecidas pelo modelo de linguagem-visão (VLM). Para prevenir o clássico *FiLM Overshadowing* (where o vetor global achata as identidades individuais de cada objeto), cada slot calcula um coeficiente de sensibilidade próprio:
+Noema-JEPA v2 conditions physical object dynamics on global semantic reasoning vectors $c_{\text{scene}}$ provided by Vision-Language Models (VLMs). To prevent *FiLM Overshadowing* (where a global semantic vector collapses individual object diversity), each slot dynamically gates its semantic intake:
 
 $$
 \tilde{h}_k = \text{LN}(h_k)
@@ -267,17 +267,17 @@ $$
 - $h_k \in \mathbb{R}^D$ is the latent representation of the $k$-th object slot within the relational Transformer block.
 - $\text{LN}(\cdot)$ denotes pre-modulation Layer Normalization.
 - $c_{\text{scene}} \in \mathbb{R}^D$ is the global semantic context vector projected by `ThinkJEPABridge` from VLM activations.
-- $W_{\text{proj}} \in \mathbb{R}^{2D \times D}$ projeta $c_{\text{scene}}$ nos fatores afins $[\gamma, \beta]$, where $\gamma \in \mathbb{R}^D$ representa a escala multiplicativa e $\beta \in \mathbb{R}^D$ representa o deslocamento aditivo.
+- $W_{\text{proj}} \in \mathbb{R}^{2D \times D}$ projects $c_{\text{scene}}$ into affine parameters $[\gamma, \beta]$, where $\gamma \in \mathbb{R}^D$ represents the multiplicative scale and $\beta \in \mathbb{R}^D$ represents the additive shift.
 - $g_k \in (0, 1)$ is the **slot-adaptive individual gate**, computed from the normalized slot state $\tilde{h}_k$. It allows independent objects to ignore global semantics while focusing modulation on interacting entities.
 - $\alpha \in \mathbb{R}^D$ is a learnable scale initialized at $\alpha_0 = 0.05$. Combined with zero-initialized projection weights, $\text{FiLM}(h_k, c_{\text{scene}}) = \text{LN}(h_k)$ at initialization, ensuring physical dynamics are mastered before semantic conditioning takes effect.
 - $\mu_{\text{wd}} \in [0.05, 1.0]$ is the dynamic modulation scale controlled by `VarianceWatchdog`. If inter-slot variance drops below safe thresholds, $\mu_{\text{wd}}$ decreases automatically to protect representations from collapse.
-- **Conditional Dropout ($p = 0.15$):** Durante o treinamento, $c_{\text{scene}}$ é zerado aleatoriamente with probabilidade 15%, assegurando capacidade preditiva consistente mesmo em inferência sem qualquer modelo de linguagem.
+- **Conditional Dropout ($p = 0.15$):** During training, $c_{\text{scene}}$ is randomly dropped with 15% probability (Classifier-Free Guidance style), ensuring robust physical prediction even during language-free inference.
 
 ---
 
-### 4. EMA Polyak Target Teacher (Estabilização de Metas Latentes)
+### 4. EMA Polyak Target Teacher (Latent Target Stabilization)
 
-No JEPA, prever diretamente sobre os slots do próprio codificador treinado pode causar colapso mútuo trivial (where codificador e preditor convergem para uma constante). Para erradicar esif problema, o Noema-JEPA v2 utiliza um **Professor EMA (Exponential Moving Average)** cujos parâmetros $\theta_{\text{target}}$ seguem os pesos do estudante $\theta_{\text{student}}$ via média de Polyak:
+In JEPA models, predicting directly onto self-encoder features risks mutual representation drift and trivial collapse (where encoder and predictor collapse to a constant). To prevent this failure mode, Noema-JEPA v2 incorporates an **Exponential Moving Average (EMA) Teacher** whose parameters $\theta_{\text{target}}$ track student weights $\theta_{\text{student}}$ via Polyak momentum:
 
 $$
 \theta_{\text{target}} \leftarrow \tau_t \, \theta_{\text{target}} + (1 - \tau_t) \, \theta_{\text{student}}
@@ -291,19 +291,19 @@ $$
 
 **Where:**
 - $\theta_{\text{student}}$ encompasses all trainable weights of `SpatialPatchEncoder` and `SlotAttention`.
-- $\theta_{\text{target}}$ são os parâmetros duplicados mantidos em modo de avaliação permanente with `requires_grad = False`.
+- $\theta_{\text{target}}$ are the mirrored target parameters maintained in evaluation mode with `requires_grad = False`.
 - $\tau_0 = 0.996$ is the baif momentum rate, steadily increasing toward $1.0$ at the end of training.
 - This temporal asymmetry guarantees that target representations $S_{\text{target}}$ evolve on a much slower, stabilized trajectory, anchoring predictive representations.
 
 ---
 
-### 5. Preditor Relacional & Rollout Temporal Condicionado por Ação ($a_t$)
+### 5. Relational Predictor & Action-Conditioned Temporal Rollout ($a_t$)
 
 The `CJEPAObjectPredictor` operates directly over object slots through a stack of 6 relational Transformer blocks, executing two core predictive tasks:
 
-#### A. Inpainting Espacial de Slots Mascarados
+#### A. Spatial Inpainting of Masked Slots
 
-Dado o conjunto de slots $S \in \mathbb{R}^{K \times D}$, seleciona-if aleatoriamente um subconjunto de índices mascarados $\mathcal{M} \subset \{1, \dots, K\}$ with $|\mathcal{M}| = M = 4$. Os slots visíveis $S_{k \notin \mathcal{M}}$ permanecem intactos, enquanto os slots ocluídos são substituídos por um token de máscara aprendível $[M] \in \mathbb{R}^D$:
+Given the set of object slots $S \in \mathbb{R}^{K \times D}$, a subset of masked indices $\mathcal{M} \subset \{1, \dots, K\}$ is randomly sampled with $|\mathcal{M}| = M = 4$. Visible slots $S_{k \notin \mathcal{M}}$ are retained, while occluded slots are replaced by a learnable mask token $[M] \in \mathbb{R}^D$:
 
 $$
 \tilde{S}_k = \begin{cases} S_k + P_k, & \text{if } k \notin \mathcal{M} \\ [M] + P_k, & \text{if } k \in \mathcal{M} \end{cases}
@@ -317,7 +317,7 @@ $$
 - $P_k \in \mathbb{R}^D$ is the positional and ordinal identity embedding for the $k$-th slot.
 - $\hat{S}_{\mathcal{M}} \in \mathbb{R}^{M \times D}$ are the predicted latent representations for the occluded object slots.
 
-#### B. Rollout Temporal Condicionado por Ação ($\hat{S}_{t+1} = f(S_t, a_t)$)
+#### B. Action-Conditioned Temporal Rollout ($\hat{S}_{t+1} = f(S_t, a_t)$)
 
 To simulate future physical dynamics in interactive environments (e.g., manipulation or robotics), the predictor conditions on continuous action vectors $a_t \in \mathbb{R}^{d_a}$:
 
@@ -334,25 +334,25 @@ $$
 $$
 
 **Where:**
-- $a_t \in \mathbb{R}^{16}$ é o vetor de ação contínua (ex: forças, velocidades de juntas, comandos de motor).
-- $\tilde{a}_t \in \mathbb{R}^D$ é a ação projetada e normalizada, somada uniformemente aos estados dos slots para ditar as forças cinemáticas que governam o próximo frame $t+1$.
-- $\hat{S}_{t+1} \in \mathbb{R}^{K \times D}$ representa o estado latente predito de todos os objetos no frame futuro.
+- $a_t \in \mathbb{R}^{16}$ is the continuous action vector (e.g., forces, joint velocities, or motor control commands).
+- $\tilde{a}_t \in \mathbb{R}^D$ is the projected, normalized action vector additively combined with object slots before relational Transformer blocks.
+- $\hat{S}_{t+1} \in \mathbb{R}^{K \times D}$ denotes the predicted latent state for all $K$ object slots at the next time step under the applied action.
 
 ---
 
 ### 6. Multi-Component World Model Objective (`NoemaWorldModelLoss`)
 
-O treinamento do Noema-JEPA v2 é governado por um objetivo conjunto multifacetado que equilibra precisão geométrica, alinhamento direcional, preservação de variância e coerência semântica:
+Training Noema-JEPA v2 is governed by a unified multi-component objective that balances predictive accuracy, directional alignment, variance preservation, and semantic coherence:
 
 $$
 \mathcal{L}_{\text{total}} = \lambda_{\text{pred}}\,\mathcal{L}_{\text{pred}} + \mathcal{L}_{\text{vicreg}} + \lambda_{\text{sigreg}}\,\mathcal{L}_{\text{sigreg}} + \lambda_{\text{temp}}\,\mathcal{L}_{\text{temp}} + \lambda_{\text{intra}}\,\mathcal{L}_{\text{intra}} + \lambda_{\text{think}}\,\mathcal{L}_{\text{think}}
 $$
 
-Abaixo detalhamos a formulação e o papel físico de cada uma das 6 perdas parciais:
+Below we formalize the exact mathematical formulation and physical role of each of the 6 partial loss components:
 
-#### A. Perda Híbrida de Predição de Slots ($\mathcal{L}_{\text{pred}}$)
+#### A. Hybrid Slot Prediction Objective ($\mathcal{L}_{\text{pred}}$)
 
-Combina penalização de erro de amplitude via norma Smooth L1 with alinhamento direcional estrito via similaridade de cossenos entre as predições do estudante $\hat{S}_k$ e os alvos gerados pelo Teacher EMA $S_k^{\text{target}}$:
+Combines element-wise Smooth L1 distance with directional alignment based on cosine similarity between student predictions $\hat{S}_k$ and targets generated by the EMA Teacher $S_k^{\text{target}}$:
 
 $$
 \mathcal{L}_{\text{pred}} = \frac{1}{|\mathcal{M}|} \sum_{k \in \mathcal{M}} \left[ \text{SmoothL1}\big(\hat{S}_k,\, \text{sg}(S_k^{\text{target}})\big) + \left( 1 - \frac{\hat{S}_k \cdot S_k^{\text{target}}}{\lVert \hat{S}_k \rVert_2 \, \lVert S_k^{\text{target}} \rVert_2} \right) \right]
@@ -364,7 +364,7 @@ $$
 
 #### B. Rollout Temporal Multi-Passo ($\mathcal{L}_{\text{temp}}$)
 
-Para dados de vídeo sequenciais with $T$ passos de tempo, a precisão do rollout é avaliada contra a trajetória real extraída pelo Teacher EMA:
+For temporal video sequences with $T$ time steps, the multi-step rollout accuracy is evaluated against the trajectory generated by the EMA Teacher:
 
 $$
 \mathcal{L}_{\text{temp}} = \frac{1}{T-1} \sum_{t=1}^{T-1} \left[ \text{SmoothL1}\big(\hat{S}_{t+1},\, \text{sg}(S_{t+1}^{\text{target}})\big) + \left( 1 - \frac{\hat{S}_{t+1} \cdot S_{t+1}^{\text{target}}}{\lVert \hat{S}_{t+1} \rVert_2 \, \lVert S_{t+1}^{\text{target}} \rVert_2} \right) \right]
@@ -372,7 +372,7 @@ $$
 
 #### C. VICReg c/ LayerNorm Projector ($\mathcal{L}_{\text{vicreg}}$)
 
-Os slots preditos $\hat{S}$ e alvos $S^{\text{target}}$ são projetados no espaço de regularização $Z \in \mathbb{R}^{B' \times D_{\text{proj}}}$ ($D_{\text{proj}} = 768$) através de um projetor de 2 camadas with **LayerNorm**:
+Predicted slots $\hat{S}$ and target slots $S^{\text{target}}$ are projected into the regularized embedding space $Z \in \mathbb{R}^{B\x27 \times D_{\text{proj}}}$ ($D_{\text{proj}} = 768$) via a 2-layer MLP with **LayerNorm**:
 
 > [!IMPORTANT]
 > **Why LayerNorm Instead of BatchNorm?**
@@ -431,7 +431,7 @@ $$
 $$
 
 **Where:**
-- $\log\det(C_{\text{reg}})$ é computado de forma ultra-estável via decomposição de Cholesky/LU (`torch.linalg.slogdet`). Como o log-determinante é a soma dos logaritmos dos autovalores ($\sum \log \lambda_i$), minimizá-lo with sinal negativo força todos os eixos latentes a expandirem simetricamente, erradicando qualquer subespaço colapsado.
+- $\log\det(C_{\text{reg}})$ is computed stably via Cholesky/LU decomposition (`torch.linalg.slogdet`). Because $\log\det(C)$ is the sum of log-eigenvalues ($\sum \log \lambda_i$), minimizing its negative forces all latent axes to expand symmetrically, eradicating subspace collapse.
 - $\mathcal{L}_{\text{decorr}}$ penalizes normalized off-diagonal Pearson correlation coefficients between distinct latent dimensions.
 
 #### E. Diversidade Intra-Cena entre Slots ($\mathcal{L}_{\text{intra}}$)
@@ -490,10 +490,10 @@ The architectural and mathematical redesign in v2 delivers substantial empirical
 | **Similaridade de Cossenos (`cos_sim`)** | `~0.022` | **`0.2950 – 0.3500`** | Hybrid angular alignment (Smooth L1 + Cosine) accelerates directional convergence. |
 | **Alvos de Predição (Target Latents)** | Estático / Próprio Encoder | **EMA Target Teacher (Polyak)** | Decoupled targets eliminate non-stationary drift. |
 | **Rastreamento Temporal de Vídeo** | Tokens 5D empilhados | **SAVi Recorrente + Rollout $t \to t+1$** | Preserves persistent object identity across temporal video frames. |
-| **Quantização de Objetos** | 100% Contínua | **FSQ (1.000 Códigos Bounded)** | Discretização simbólica with STE sem colapso de dicionário. |
+| **Object Quantization** | 100% Continuous | **FSQ (1,000 Bounded Codes)** | Discretização simbólica with STE sem colapso de dicionário. |
 | **Regularização Espectral** | VICReg puro | **VICReg + SIGReg (Log-Det)** | Volume maximization via $\log\det(C)$ prevents subspace collapse. |
-| **Condicionamento por Ação ($a_t$)** | Inexistente | **Nativo no Predictor** | Enables interactive physical simulation and world models for control. |
-| **Status da Suíte de Testes** | 6/6 Passing | **8/8 Passing (100%)** | Comprehensive coverage across all newly introduced v2 capabilities. |
+| **Action Conditioning ($a_t$)** | None | **Native in Predictor** | Enables interactive physical simulation and world models for control. |
+| **Verification Suite Status** | 6/6 Passing | **8/8 Passing (100%)** | Comprehensive coverage across all newly introduced v2 capabilities. |
 
 ---
 
@@ -538,11 +538,11 @@ toy_loader = build_noema_dataloader(
 
 ---
 
-## ⚡ Guia Prático de Execução no Google Colab & GPUs Locais
+## ⚡ Quickstart & Execution Guide on Google Colab & Local GPUs
 
-### 1. Instalação e Preparação do Ambiente
+### 1. Installation & Environment Setup
 
-#### No Google Colab (Pronto em ~5 segundos):
+#### On Google Colab (Ready in ~5 seconds):
 > [!TIP]
 > O Google Colab já possui `torch`, `torchvision` e `numpy` pré-instalados. Basta clonar e instalar os requisitos leves:
 
@@ -562,7 +562,7 @@ pip install -e .
 
 ---
 
-### 2. Verificação Completa da Arquitetura (8 Testes)
+### 2. Architecture Verification Suite (8 Test Steps)
 
 Execute a suíte integrada para validar parâmetros, fluxos de vídeo 5D, Teacher EMA, FSQ e estabilidade matemática:
 
@@ -634,7 +634,7 @@ for epoch in range(1, 11):
     for step, batch in enumerate(loader):
         loss, metrics, report = trainer.train_step(batch)
         
-        # Opcional: Atualização explícita do Teacher EMA with decaimento Polyak
+        # Optional: Explicitly update Teacher EMA weights with Polyak decay
         model.update_ema(momentum=0.996)
         
         if step % 20 == 0:
@@ -671,7 +671,7 @@ Noema-JEPAv1/
 │   │   └── vicreg.py                  # LayerNorm VICReg, SIGReg, Intra-Scene & World Model Loss v2
 │   ├── monitoring/
 │   │   ├── __init__.py
-│   │   └── variance_watchdog.py       # VarianceWatchdog with realimentação ativa
+│   │   └── variance_watchdog.py       # VarianceWatchdog with active closed-loop feedback
 │   ├── think_branch/
 │   │   ├── __init__.py
 │   │   └── vllm_extractor.py          # Offline vLLM PagedAttention extractor & SafeTensors cache
