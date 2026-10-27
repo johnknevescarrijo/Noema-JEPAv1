@@ -68,13 +68,14 @@ class SpatialPatchEncoder(nn.Module):
 
         self.norm = nn.LayerNorm(embed_dim)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, return_per_frame: bool = False) -> torch.Tensor:
         """
         Args:
             x: Input tensor, either [B, C, H, W] or [B, T, C, H, W].
+            return_per_frame: If True and input is 5D video, returns [B, T, N_patches, D].
 
         Returns:
-            Spatial patch tokens of shape [B, N_patches, embed_dim].
+            Spatial patch tokens of shape [B, N_patches, embed_dim] or [B, T, N_patches, embed_dim].
         """
         is_video = (x.ndim == 5)
         if is_video:
@@ -107,7 +108,12 @@ class SpatialPatchEncoder(nn.Module):
         for blk in self.blocks:
             tokens = blk(tokens)
 
-        return self.norm(tokens)
+        tokens = self.norm(tokens)
+        if is_video and return_per_frame:
+            return rearrange(tokens, "b (t n) d -> b t n d", t=T, n=self.num_patches)
+        elif (not is_video) and return_per_frame:
+            return tokens.unsqueeze(1)
+        return tokens
 
 
 class TransformerEncoderBlock(nn.Module):
@@ -208,11 +214,29 @@ class SlotAttention(nn.Module):
             nn.Linear(hidden_dim, slot_dim),
         )
 
-    def forward(self, inputs: torch.Tensor, num_slots: Optional[int] = None) -> torch.Tensor:
+        # SAVi-style temporal transition predictor for recurrent tracking across frames
+        self.temporal_transition = nn.Sequential(
+            nn.LayerNorm(slot_dim),
+            nn.Linear(slot_dim, slot_dim),
+            nn.GELU(),
+            nn.Linear(slot_dim, slot_dim),
+        )
+        # Zero-initialize the final projection so transition starts as exact identity
+        nn.init.zeros_(self.temporal_transition[-1].weight)
+        nn.init.zeros_(self.temporal_transition[-1].bias)
+
+    def forward(
+        self,
+        inputs: torch.Tensor,
+        num_slots: Optional[int] = None,
+        init_slots: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
         """
         Args:
             inputs: Spatial feature tokens [B, N_patches, in_features].
             num_slots: Optional override for slot count.
+            init_slots: Optional initial slot representations [B, K, slot_dim].
+                        If provided, bypasses learned Gaussian sampling (SAVi tracking).
 
         Returns:
             Discovered object slots of shape [B, num_slots, slot_dim].
@@ -220,10 +244,13 @@ class SlotAttention(nn.Module):
         B, N, _ = inputs.shape
         K = num_slots if num_slots is not None else self.num_slots
 
-        # Initialize slot representations via learned Gaussian sampling
-        mu = self.slots_mu.expand(B, K, -1)
-        sigma = self.slots_log_sigma.exp().expand(B, K, -1)
-        slots = mu + sigma * torch.randn_like(mu)
+        # Initialize slot representations
+        if init_slots is not None:
+            slots = init_slots
+        else:
+            mu = self.slots_mu.expand(B, K, -1)
+            sigma = self.slots_log_sigma.exp().expand(B, K, -1)
+            slots = mu + sigma * torch.randn_like(mu)
 
         # Project inputs to keys and values once
         inputs_norm = self.norm_inputs(inputs)
@@ -259,3 +286,38 @@ class SlotAttention(nn.Module):
             slots = slots + self.mlp(self.norm_pre_ffn(slots))
 
         return slots
+
+    def forward_video(
+        self,
+        frame_features: torch.Tensor,
+        num_slots: Optional[int] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        SAVi-style recurrent slot propagation across a temporal sequence of frames.
+
+        Args:
+            frame_features: Spatial features per frame of shape [B, T, N, in_features].
+            num_slots: Optional override for slot count.
+
+        Returns:
+            trajectories: Slot states across all time steps [B, T, K, slot_dim].
+            consolidated: Consolidated slot representations at the final frame [B, K, slot_dim].
+        """
+        B, T, N, _ = frame_features.shape
+        K = num_slots if num_slots is not None else self.num_slots
+
+        trajectories = []
+        current_slots: Optional[torch.Tensor] = None
+
+        for t in range(T):
+            feat_t = frame_features[:, t]  # [B, N, in_features]
+            if t == 0:
+                current_slots = self.forward(feat_t, num_slots=K, init_slots=None)
+            else:
+                pred_init = current_slots + self.temporal_transition(current_slots)
+                current_slots = self.forward(feat_t, num_slots=K, init_slots=pred_init)
+            trajectories.append(current_slots)
+
+        trajectories_tensor = torch.stack(trajectories, dim=1)  # [B, T, K, slot_dim]
+        consolidated = trajectories_tensor[:, -1]               # [B, K, slot_dim]
+        return trajectories_tensor, consolidated
