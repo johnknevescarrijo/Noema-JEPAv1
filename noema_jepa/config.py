@@ -51,6 +51,33 @@ class NoemaConfig:
     cond_dropout: float = 0.15  # FiLM conditional dropout (Classifier-Free Guidance style)
     initial_film_modulation_scale: float = 1.0
 
+    # --- Model Version ---
+    model_version: str = "v2"
+
+    # --- EMA Target Encoder (v2) ---
+    use_ema_target: bool = True
+    ema_decay_base: float = 0.996
+    ema_decay_max: float = 1.0
+
+    # --- Temporal Slot Tracking (SAVi-style) & Multi-Step Rollout (v2) ---
+    use_temporal_slot_tracking: bool = True  # Frame-by-frame recurrent slot tracking when video 5D [B, T, C, H, W] is provided
+    temporal_rollout_steps: int = 1         # Temporal prediction S_hat_{t+1} from S_t in video mode
+    temporal_loss_weight: float = 1.0       # Weight for multi-step temporal slot prediction loss
+
+    # --- Action Conditioning (v2) ---
+    action_dim: int = 16                    # Optional action vector dimension for interactive world models
+    use_action_conditioning: bool = True
+
+    # --- Symbolic FSQ Quantizer (Finite Scalar Quantization, v2) ---
+    use_fsq_quantizer: bool = True
+    fsq_levels: Tuple[int, ...] = (8, 5, 5, 5)  # 1000 discrete codes (8*5*5*5), parameter-free codebook
+    fsq_residual_weight: float = 0.15           # Residual blending weight: z_slot + w * z_fsq
+
+    # --- SIGReg & VICReg Projector (v2) ---
+    use_sigreg_loss: bool = True            # Spectral Invariance & Log-Determinant Covariance Regularizer
+    lambda_sigreg: float = 0.1              # Weight for SIGReg loss
+    vicreg_use_layernorm: bool = True       # Replaces BatchNorm1d with LayerNorm + residual in VICReg projector
+
     # --- Projections & Latent Spaces ---
     vicreg_proj_dim: int = 768  # Projector latent dim for VICReg loss (calibrated for 15.0M total params)
     vicreg_proj_depth: int = 2   # Number of MLP layers in VICReg projector
