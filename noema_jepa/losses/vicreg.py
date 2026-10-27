@@ -283,6 +283,13 @@ class NoemaWorldModelLoss(nn.Module):
             **sigreg_metrics,
         }
 
+        if "fsq_perplexity" in outputs:
+            val = outputs["fsq_perplexity"]
+            metrics["fsq_perplexity"] = val.item() if isinstance(val, torch.Tensor) else float(val)
+        if "fsq_codebook_usage" in outputs:
+            val = outputs["fsq_codebook_usage"]
+            metrics["fsq_codebook_usage"] = val.item() if isinstance(val, torch.Tensor) else float(val)
+
         return total_loss, metrics
 
     def compute_loss(self, outputs: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, Dict[str, float]]:

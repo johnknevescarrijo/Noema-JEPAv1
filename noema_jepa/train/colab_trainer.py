@@ -124,7 +124,8 @@ class ColabTrainer:
         self.model.train()
         self.optimizer.zero_grad(set_to_none=True)
 
-        # Unpack batch safely supporting 'images' or 'image', 'think_embeddings' or 'think_emb'
+        actions = None
+        # Unpack batch safely supporting 'images' or 'image', 'think_embeddings' or 'think_emb', and 'actions'
         if isinstance(batch, dict):
             images = batch.get("images")
             if images is None:
@@ -140,11 +141,22 @@ class ColabTrainer:
                 think_embs = think_embs.to(self.device, non_blocking=True)
             else:
                 think_embs = None
+
+            acts = batch.get("actions")
+            if acts is None:
+                acts = batch.get("action")
+            if acts is not None and isinstance(acts, torch.Tensor) and acts.numel() > 0:
+                actions = acts.to(self.device, non_blocking=True)
         elif isinstance(batch, (list, tuple)):
             images = batch[0].to(self.device, non_blocking=True)
             think_embs = (
                 batch[1].to(self.device, non_blocking=True)
                 if len(batch) > 1 and isinstance(batch[1], torch.Tensor) and batch[1].numel() > 0
+                else None
+            )
+            actions = (
+                batch[2].to(self.device, non_blocking=True)
+                if len(batch) > 2 and isinstance(batch[2], torch.Tensor) and batch[2].numel() > 0
                 else None
             )
         else:
@@ -161,6 +173,7 @@ class ColabTrainer:
                 outputs = self.model(
                     images=images,
                     think_embeddings=think_embs,
+                    actions=actions,
                     modulation_scale=mod_scale,
                 )
                 loss, metrics = self.loss_fn(outputs)
@@ -173,6 +186,7 @@ class ColabTrainer:
                     outputs = self.model(
                         images=images,
                         think_embeddings=think_embs,
+                        actions=actions,
                         modulation_scale=mod_scale,
                     )
                     loss, metrics = self.loss_fn(outputs)
@@ -188,6 +202,17 @@ class ColabTrainer:
 
         self.scaler.step(self.optimizer)
         self.scaler.update()
+
+        # Update EMA target encoder (v2) with cosine scheduled momentum
+        if getattr(self.config, "use_ema_target", True):
+            total_steps = max(getattr(self.config, "total_steps", 1000), 1)
+            progress = min(1.0, float(self.global_step) / float(total_steps))
+            m_base = getattr(self.config, "ema_decay_base", 0.996)
+            m_max = getattr(self.config, "ema_decay_max", 1.0)
+            ema_momentum = m_max - (m_max - m_base) * (math.cos(math.pi * progress) + 1.0) / 2.0
+            raw_model = getattr(self.model, "_orig_mod", self.model)
+            if hasattr(raw_model, "update_ema"):
+                raw_model.update_ema(ema_momentum)
 
         if self.scheduler is not None:
             self.scheduler.step()
@@ -211,6 +236,9 @@ class ColabTrainer:
         total_loss = 0.0
         total_pred_loss = 0.0
         total_vicreg_loss = 0.0
+        total_sigreg_loss = 0.0
+        total_temporal_loss = 0.0
+        total_cos_sim = 0.0
         total_intra_std = 0.0
         num_batches = 0
         num_samples = 0
@@ -224,6 +252,9 @@ class ColabTrainer:
                 "pred_loss": 0.0,
                 "loss_vicreg": 0.0,
                 "vicreg_loss": 0.0,
+                "loss_sigreg": 0.0,
+                "loss_temporal": 0.0,
+                "pred_cosine_sim": 0.0,
                 "intra_std": 0.0,
                 "throughput_samples_per_sec": 0.0,
                 "throughput": 0.0,
@@ -248,25 +279,38 @@ class ColabTrainer:
 
             pred_l = metrics.get("loss_pred", metrics.get("pred_loss", 0.0))
             vic_l = metrics.get("loss_vicreg", metrics.get("vicreg_loss", 0.0))
+            sig_l = metrics.get("loss_sigreg", 0.0)
+            temp_l = metrics.get("loss_temporal", 0.0)
+            cos_s = metrics.get("pred_cosine_sim", metrics.get("cosine_sim_pred_target", 0.0))
             intra_s = metrics.get("metric_intra_scene_std", metrics.get("intra_std", 0.0))
 
             total_pred_loss += pred_l
             total_vicreg_loss += vic_l
+            total_sigreg_loss += sig_l
+            total_temporal_loss += temp_l
+            total_cos_sim += cos_s
             total_intra_std += intra_s
             num_batches += 1
 
-            pbar.set_postfix({
+            postfix = {
                 "loss": f"{loss:.3f}",
                 "pred": f"{pred_l:.3f}",
+                "cos": f"{cos_s:.3f}",
                 "intra_std": f"{intra_s:.3f}",
                 "scale": f"{report.current_modulation_scale:.2f}",
                 "status": report.status,
-            })
+            }
+            if "fsq_codebook_usage" in metrics:
+                postfix["fsq_use"] = f"{float(metrics['fsq_codebook_usage']):.2f}"
+            pbar.set_postfix(postfix)
 
         elapsed = time.time() - start_time
         avg_loss = total_loss / max(num_batches, 1)
         avg_pred = total_pred_loss / max(num_batches, 1)
         avg_vicreg = total_vicreg_loss / max(num_batches, 1)
+        avg_sigreg = total_sigreg_loss / max(num_batches, 1)
+        avg_temporal = total_temporal_loss / max(num_batches, 1)
+        avg_cos_sim = total_cos_sim / max(num_batches, 1)
         avg_intra = total_intra_std / max(num_batches, 1)
         throughput = num_samples / max(elapsed, 1e-4)
 
@@ -277,6 +321,9 @@ class ColabTrainer:
             "pred_loss": avg_pred,
             "loss_vicreg": avg_vicreg,
             "vicreg_loss": avg_vicreg,
+            "loss_sigreg": avg_sigreg,
+            "loss_temporal": avg_temporal,
+            "pred_cosine_sim": avg_cos_sim,
             "intra_std": avg_intra,
             "throughput_samples_per_sec": throughput,
             "throughput": throughput,
