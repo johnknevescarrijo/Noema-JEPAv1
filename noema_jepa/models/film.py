@@ -45,6 +45,12 @@ class ZeroInitResidualFiLM(nn.Module):
         # Projection from conditioning vector c_scene into gamma and beta
         self.cond_proj = nn.Linear(cond_dim, 2 * embed_dim)
 
+        # Slot-adaptive semantic gating: allows individual object slots to calibrate
+        # the modulation intensity, preventing homogeneous scene collapse
+        self.slot_gate_proj = nn.Linear(embed_dim, 1)
+        nn.init.zeros_(self.slot_gate_proj.weight)
+        nn.init.constant_(self.slot_gate_proj.bias, 2.0)  # Starts open (sigmoid(2.0) ~ 0.88)
+
         # Learnable gating parameter alpha: initialized small to guarantee near-identity at start
         self.alpha = nn.Parameter(torch.full((1, 1, embed_dim), fill_value=alpha_init))
 
@@ -86,12 +92,15 @@ class ZeroInitResidualFiLM(nn.Module):
         gamma_beta = self.cond_proj(c_scene).unsqueeze(1)  # [B, 1, 2*D]
         gamma, beta = torch.chunk(gamma_beta, 2, dim=-1)   # [B, 1, D], [B, 1, D]
 
+        # Slot-adaptive gate [B, N, 1] to modulate per-slot responsiveness
+        slot_gate = torch.sigmoid(self.slot_gate_proj(h_norm))
+
         # Effective modulation alpha, scaled dynamically by watchdog
         eff_alpha = self.alpha * float(modulation_scale)
 
-        # Non-linear gating with tanh to prevent runaway scale
-        scale = 1.0 + eff_alpha * torch.tanh(gamma)
-        shift = eff_alpha * beta
+        # Non-linear gating with tanh scaled by slot_gate
+        scale = 1.0 + eff_alpha * torch.tanh(gamma) * slot_gate
+        shift = eff_alpha * beta * slot_gate
 
         return scale * h_norm + shift
 
