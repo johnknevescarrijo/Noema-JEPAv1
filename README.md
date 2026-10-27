@@ -166,15 +166,15 @@ Given spatial feature patch tokens $X \in \mathbb{R}^{N \times D}$ and slot repr
 #### A. Iterative Competitive Attention (Within Frame $t$)
 
 $$
-Q = W_q\big(\operatorname{LN}(S)\big), \quad K = W_k\big(\operatorname{LN}(X)\big), \quad V = W_v\big(\operatorname{LN}(X)\big)
+Q = W_q\big(\text{LN}(S)\big), \quad K = W_k\big(\text{LN}(X)\big), \quad V = W_v\big(\text{LN}(X)\big)
 $$
 
 $$
-A_{k, n} = \operatorname{Softmax}_{k} \left( \frac{Q_k K_n^{\top}}{\sqrt{D}} \right), \quad \hat{A}_{k, n} = \frac{A_{k, n} + \epsilon}{\sum_{m=1}^{N} (A_{k, m} + \epsilon)}
+A_{k, n} = \text{Softmax}_{k} \left( \frac{Q_k K_n^{\top}}{\sqrt{D}} \right), \quad \hat{A}_{k, n} = \frac{A_{k, n} + \epsilon}{\sum_{m=1}^{N} (A_{k, m} + \epsilon)}
 $$
 
 $$
-U_k = \sum_{n=1}^{N} \hat{A}_{k, n} V_n, \quad S_k \leftarrow \operatorname{GRU}(U_k, S_k) + \operatorname{MLP}\big(\operatorname{LN}(S_k)\big)
+U_k = \sum_{n=1}^{N} \hat{A}_{k, n} V_n, \quad S_k \leftarrow \text{GRU}(U_k, S_k) + \text{MLP}\big(\text{LN}(S_k)\big)
 $$
 
 **Onde:**
@@ -184,12 +184,12 @@ $$
 - $A_{k, n}$ é o mapa de atenção normalizado via softmax sobre a dimensão dos **slots** ($k$), forçando os slots a competirem mutuamente por cada patch visual $n$.
 - $\hat{A}_{k, n}$ representa a re-normalização estabilizada ao longo da dimensão espacial dos patches, garantindo que a soma ponderada não divirja sob mascaramento ou regiões de baixa variância ($\epsilon = 10^{-6}$).
 - $U_k \in \mathbb{R}^D$ é o vetor de evidência visual agregada atribuído ao $k$-ésimo slot de objeto.
-- $\operatorname{GRU}(U_k, S_k)$ atualiza o estado interno do slot de maneira recorrente e estável, seguido por um bloco MLP residual com pré-LayerNorm.
+- $\text{GRU}(U_k, S_k)$ atualiza o estado interno do slot de maneira recorrente e estável, seguido por um bloco MLP residual com pré-LayerNorm.
 - O cálculo do produto escalar $\frac{Q K^\top}{\sqrt{D}}$ e a softmax são avaliados estritamente em **`torch.float32`**, eliminando sob/transbordamento numérico sob precisão mista AMP (`float16` ou `bfloat16`).
 
 #### B. SAVi Temporal Recurrent Transition Across Frames ($t-1 \to t$)
 
-Para sequências temporais de vídeo, os slots no frame inicial $t=0$ são inicializados por amostragem gaussiana aprendível $S_0 \sim \mathcal{N}(\mu_{\text{slot}}, \operatorname{diag}(\sigma_{\text{slot}}^2))$. Para qualquer frame subsequente $t > 0$, a inicialização dos slots herda o estado do frame anterior através de um preditor de transição física residual:
+Para sequências temporais de vídeo, os slots no frame inicial $t=0$ são inicializados por amostragem gaussiana aprendível $S_0 \sim \mathcal{N}(\mu_{\text{slot}}, \text{diag}(\sigma_{\text{slot}}^2))$. Para qualquer frame subsequente $t > 0$, a inicialização dos slots herda o estado do frame anterior através de um preditor de transição física residual:
 
 $$
 S_t^{\text{init}} = S_{t-1} + f_{\text{trans}}(S_{t-1})
@@ -197,7 +197,7 @@ $$
 
 **Onde:**
 - $S_{t-1} \in \mathbb{R}^{K \times D}$ é o estado final dos slots de objetos descobertos no instante de tempo anterior $t-1$.
-- $f_{\text{trans}}(\cdot)$ é uma rede neural feedforward de 2 camadas com LayerNorm e ativação GELU, inicializada com pesos zero na última camada linear ($\operatorname{init.zeros\_}$).
+- $f_{\text{trans}}(\cdot)$ é uma rede neural feedforward de 2 camadas com LayerNorm e ativação GELU, inicializada com pesos zero na última camada linear ($\text{init.zeros\_}$).
 - Essa inicialização residual garante que, no início do treinamento, a transição comece como identidade estrita ($S_t^{\text{init}} \approx S_{t-1}$), permitindo que o modelo aprenda gradualmente velocidades, acelerações e o rastreamento temporal contínuo sem choque nos gradientes.
 
 ---
@@ -217,7 +217,7 @@ $$
 $$
 
 $$
-\hat{z}_d = \operatorname{round}(\tilde{z}_d), \quad z_{\text{ste}} = \tilde{z} + \operatorname{sg}(\hat{z} - \tilde{z})
+\hat{z}_d = \text{round}(\tilde{z}_d), \quad z_{\text{ste}} = \tilde{z} + \text{sg}(\hat{z} - \tilde{z})
 $$
 
 $$
@@ -225,15 +225,15 @@ z_q = \frac{z_{\text{ste}}}{\max(s, 1.0)}, \quad S_{\text{out}} = S + \lambda_{\
 $$
 
 $$
-c_d = \operatorname{clamp}\big(\operatorname{round}(\hat{z}_d + s_d),\, 0,\, L_d - 1\big), \quad \text{Index} = \sum_{d=1}^{d_q} c_d \prod_{j=1}^{d-1} L_j
+c_d = \text{clamp}\big(\text{round}(\hat{z}_d + s_d),\, 0,\, L_d - 1\big), \quad \text{Index} = \sum_{d=1}^{d_q} c_d \prod_{j=1}^{d-1} L_j
 $$
 
 **Onde:**
 - $W_{\text{in}} \in \mathbb{R}^{d_q \times D}$ projeta os slots contínuos de dimensão $D = 288$ no gargalo discreto de dimensão $d_q = 4$.
 - $L_d$ é o número de níveis discretos no canal escalar $d \in \{1, 2, 3, 4\}$.
 - $s_d = \frac{L_d - 1}{2}$ é a meia-largura do intervalo de quantização para cada canal. A função $\tanh(z_d) \cdot s_d$ delimita analiticamente os valores contínuos estritamente no intervalo $[-s_d, s_d]$.
-- $\operatorname{round}(\cdot)$ quantiza os valores para os inteiros mais próximos dentro dos baldes discretos.
-- $\operatorname{sg}(\cdot)$ denota o operador stop-gradient. No passo forward, o tensor propaga os valores discretizados $\hat{z}$; no passo backward, os gradientes fluem inalterados através de $\tilde{z}$ via Straight-Through Estimator (STE).
+- $\text{round}(\cdot)$ quantiza os valores para os inteiros mais próximos dentro dos baldes discretos.
+- $\text{sg}(\cdot)$ denota o operador stop-gradient. No passo forward, o tensor propaga os valores discretizados $\hat{z}$; no passo backward, os gradientes fluem inalterados através de $\tilde{z}$ via Straight-Through Estimator (STE).
 - $\lambda_{\text{fsq}} = 0.15$ é o peso residual da mistura. Como $W_{\text{out}}$ é inicializado com desvio padrão quase nulo ($10^{-4}$), a geometria latente contínua dos slots é perfeitamente preservada no início do treino, enquanto o vocabulário discreto vai sendo ancorado de forma suave e estável.
 - $\text{Index} \in \{0, 1, \dots, 999\}$ é o índice discreto mapeado para inferência simbólica e inspeção de entropia/perplexidade.
 
@@ -244,7 +244,7 @@ $$
 O Noema-JEPA v2 condiciona as transições físicas de objetos às informações semânticas globais $c_{\text{scene}}$ fornecidas pelo modelo de linguagem-visão (VLM). Para prevenir o clássico *FiLM Overshadowing* (onde o vetor global achata as identidades individuais de cada objeto), cada slot calcula um coeficiente de sensibilidade próprio:
 
 $$
-\tilde{h}_k = \operatorname{LN}(h_k)
+\tilde{h}_k = \text{LN}(h_k)
 $$
 
 $$
@@ -260,16 +260,16 @@ $$
 $$
 
 $$
-\operatorname{FiLM}(h_k, c_{\text{scene}}) = \Big( 1 + \alpha_{\text{eff}} \odot \tanh(\gamma) \odot g_k \Big) \odot \tilde{h}_k + \Big( \alpha_{\text{eff}} \odot \beta \odot g_k \Big)
+\text{FiLM}(h_k, c_{\text{scene}}) = \Big( 1 + \alpha_{\text{eff}} \odot \tanh(\gamma) \odot g_k \Big) \odot \tilde{h}_k + \Big( \alpha_{\text{eff}} \odot \beta \odot g_k \Big)
 $$
 
 **Onde:**
 - $h_k \in \mathbb{R}^D$ é a representação latente do $k$-ésimo slot na camada relacional do Transformer.
-- $\operatorname{LN}(\cdot)$ denota Layer Normalization pré-modulação.
+- $\text{LN}(\cdot)$ denota Layer Normalization pré-modulação.
 - $c_{\text{scene}} \in \mathbb{R}^D$ é o vetor de contexto semântico global projetado pelo `ThinkJEPABridge` a partir dos embeddings do VLM.
 - $W_{\text{proj}} \in \mathbb{R}^{2D \times D}$ projeta $c_{\text{scene}}$ nos fatores afins $[\gamma, \beta]$, onde $\gamma \in \mathbb{R}^D$ representa a escala multiplicativa e $\beta \in \mathbb{R}^D$ representa o deslocamento aditivo.
 - $g_k \in (0, 1)$ é o **gate adaptativo individual do slot**, calculado a partir do próprio estado de objeto $\tilde{h}_k$. Ele permite que objetos que não dependem do contexto semântico global ignorem a modulação, enquanto objetos centrais à narrativa física ajustem seus estados.
-- $\alpha \in \mathbb{R}^D$ é um parâmetro aprendível de atenuação, inicializado em $\alpha_0 = 0.05$. Como os pesos de $W_{\text{proj}}$ são inicializados em zero, no início do treinamento $\operatorname{FiLM}(h_k, c_{\text{scene}}) = \operatorname{LN}(h_k)$, garantindo que o modelo aprenda física pura antes de absorver semântica.
+- $\alpha \in \mathbb{R}^D$ é um parâmetro aprendível de atenuação, inicializado em $\alpha_0 = 0.05$. Como os pesos de $W_{\text{proj}}$ são inicializados em zero, no início do treinamento $\text{FiLM}(h_k, c_{\text{scene}}) = \text{LN}(h_k)$, garantindo que o modelo aprenda física pura antes de absorver semântica.
 - $\mu_{\text{wd}} \in [0.05, 1.0]$ é o escalonador dinâmico calculado a cada passo pelo `VarianceWatchdog`. Se a variância entre os slots cair perigosamente, $\mu_{\text{wd}}$ diminui automaticamente para salvar a representação.
 - **Conditional Dropout ($p = 0.15$):** Durante o treinamento, $c_{\text{scene}}$ é zerado aleatoriamente com probabilidade 15%, assegurando capacidade preditiva consistente mesmo em inferência sem qualquer modelo de linguagem.
 
@@ -310,7 +310,7 @@ $$
 $$
 
 $$
-\hat{S}_{\mathcal{M}} = \operatorname{Head}_{\text{pred}}\Big( \operatorname{Transformer}\big(\tilde{S},\, c_{\text{scene}}\big) \Big)_{\mathcal{M}}
+\hat{S}_{\mathcal{M}} = \text{Head}_{\text{pred}}\Big( \text{Transformer}\big(\tilde{S},\, c_{\text{scene}}\big) \Big)_{\mathcal{M}}
 $$
 
 **Onde:**
@@ -322,7 +322,7 @@ $$
 Para predição de dinâmica futura em ambientes interativos (robótica, manipulação ou navegação), o modelo aceita vetores de ação externa $a_t \in \mathbb{R}^{d_a}$:
 
 $$
-\tilde{a}_t = W_2 \, \operatorname{GELU}\big(\operatorname{LN}(W_1 a_t + b_1)\big) + b_2
+\tilde{a}_t = W_2 \, \text{GELU}\big(\text{LN}(W_1 a_t + b_1)\big) + b_2
 $$
 
 $$
@@ -330,7 +330,7 @@ S_t^{\text{act}} = S_t + P + \tilde{a}_t
 $$
 
 $$
-\hat{S}_{t+1} = \operatorname{Head}_{\text{pred}}\Big( \operatorname{Transformer}\big(S_t^{\text{act}},\, c_{\text{scene}}\big) \Big)
+\hat{S}_{t+1} = \text{Head}_{\text{pred}}\Big( \text{Transformer}\big(S_t^{\text{act}},\, c_{\text{scene}}\big) \Big)
 $$
 
 **Onde:**
@@ -355,19 +355,19 @@ Abaixo detalhamos a formulação e o papel físico de cada uma das 6 perdas parc
 Combina penalização de erro de amplitude via norma Smooth L1 com alinhamento direcional estrito via similaridade de cossenos entre as predições do estudante $\hat{S}_k$ e os alvos gerados pelo Teacher EMA $S_k^{\text{target}}$:
 
 $$
-\mathcal{L}_{\text{pred}} = \frac{1}{|\mathcal{M}|} \sum_{k \in \mathcal{M}} \left[ \operatorname{SmoothL1}\big(\hat{S}_k,\, \operatorname{sg}(S_k^{\text{target}})\big) + \left( 1 - \frac{\hat{S}_k \cdot S_k^{\text{target}}}{\lVert \hat{S}_k \rVert_2 \, \lVert S_k^{\text{target}} \rVert_2} \right) \right]
+\mathcal{L}_{\text{pred}} = \frac{1}{|\mathcal{M}|} \sum_{k \in \mathcal{M}} \left[ \text{SmoothL1}\big(\hat{S}_k,\, \text{sg}(S_k^{\text{target}})\big) + \left( 1 - \frac{\hat{S}_k \cdot S_k^{\text{target}}}{\lVert \hat{S}_k \rVert_2 \, \lVert S_k^{\text{target}} \rVert_2} \right) \right]
 $$
 
 **Onde:**
-- $\operatorname{SmoothL1}(u, v) = \begin{cases} 0.5 (u - v)^2, & \text{se } |u - v| < 1 \\ |u - v| - 0.5, & \text{caso contrário} \end{cases}$
-- O termo $(1 - \operatorname{CosineSim})$ força o preditor a acertar a orientação exata dos autovetores de cada objeto no espaço latente, acelerando a convergência.
+- $\text{SmoothL1}(u, v) = \begin{cases} 0.5 (u - v)^2, & \text{se } |u - v| < 1 \\ |u - v| - 0.5, & \text{caso contrário} \end{cases}$
+- O termo $(1 - \text{CosineSim})$ força o preditor a acertar a orientação exata dos autovetores de cada objeto no espaço latente, acelerando a convergência.
 
 #### B. Rollout Temporal Multi-Passo ($\mathcal{L}_{\text{temp}}$)
 
 Para dados de vídeo sequenciais com $T$ passos de tempo, a precisão do rollout é avaliada contra a trajetória real extraída pelo Teacher EMA:
 
 $$
-\mathcal{L}_{\text{temp}} = \frac{1}{T-1} \sum_{t=1}^{T-1} \left[ \operatorname{SmoothL1}\big(\hat{S}_{t+1},\, \operatorname{sg}(S_{t+1}^{\text{target}})\big) + \left( 1 - \frac{\hat{S}_{t+1} \cdot S_{t+1}^{\text{target}}}{\lVert \hat{S}_{t+1} \rVert_2 \, \lVert S_{t+1}^{\text{target}} \rVert_2} \right) \right]
+\mathcal{L}_{\text{temp}} = \frac{1}{T-1} \sum_{t=1}^{T-1} \left[ \text{SmoothL1}\big(\hat{S}_{t+1},\, \text{sg}(S_{t+1}^{\text{target}})\big) + \left( 1 - \frac{\hat{S}_{t+1} \cdot S_{t+1}^{\text{target}}}{\lVert \hat{S}_{t+1} \rVert_2 \, \lVert S_{t+1}^{\text{target}} \rVert_2} \right) \right]
 $$
 
 #### C. VICReg c/ LayerNorm Projector ($\mathcal{L}_{\text{vicreg}}$)
@@ -451,7 +451,7 @@ $$
 Projeta a média dos slots de objetos no espaço do vetor semântico e maximiza a similaridade de cossenos:
 
 $$
-\bar{S}_b = \frac{1}{K} \sum_{k=1}^{K} S_{b, k}, \quad \hat{c}_b = \operatorname{Head}_{\text{think}}(\bar{S}_b)
+\bar{S}_b = \frac{1}{K} \sum_{k=1}^{K} S_{b, k}, \quad \hat{c}_b = \text{Head}_{\text{think}}(\bar{S}_b)
 $$
 
 $$
